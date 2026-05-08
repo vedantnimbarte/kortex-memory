@@ -1,0 +1,509 @@
+# Kortex Memory — Build Plan
+
+> **Status snapshot (2026-05-08):** M1 (Foundation) complete. M2–M10 pending.
+
+## Context
+
+This is a greenfield project building **kortex-memory**: a production-grade, multi-tenant memory layer that LLM apps and AI coding agents (Claude Code, Codex, OpenCode, others) plug into via MCP. It stores chats, atomic memories, vector embeddings, and attachments in Postgres + S3, exposes everything over REST, MCP (stdio + SSE), and a CLI, and uses agentic LLM-driven retrieval over hybrid vector + BM25 + recency search. Memories auto-promote and decay across short/mid/long tiers based on time and access patterns. The intent: give every coding agent a shared, durable, scoped, access-controlled memory that survives across sessions and tools.
+
+All architectural decisions below were locked in during planning Q&A (tenancy = SaaS multi-tenant, embeddings = pluggable/local default, attachments = S3, retrieval = agentic, MCP = stdio + SSE, CLI = full admin+user, jobs = Celery+Redis, auth = API keys + JWT, observability = OTel, layout = uv monorepo, skills = server-side strategy classes).
+
+## Decisions (locked)
+
+| Area | Choice |
+|---|---|
+| Tenancy | Org → Workspace → Project → Session, full RBAC |
+| Auth | API keys (scoped, argon2id-hashed) + JWT for dashboard |
+| Access control | Sensitivity tiers (public/internal/confidential/secret) × RBAC roles (owner/admin/member/viewer) |
+| Embeddings | Pluggable `Embedder` protocol; default `BAAI/bge-large-en-v1.5` (1024 dim) |
+| LLM | Pluggable `LLM` protocol; default `claude-sonnet-4-7` (planning), `claude-haiku-4` (summaries) |
+| Reranker | `BAAI/bge-reranker-v2-m3` |
+| Storage | S3-compatible (MinIO dev, S3/R2 prod) via `aiobotocore` |
+| Vector DB | Postgres 16 + pgvector 0.7+, **HNSW** (m=16, ef_construction=64), cosine distance |
+| FTS | tsvector GIN + pg_trgm; fusion via Reciprocal Rank Fusion (k=60) |
+| Tiers | short/mid/long, decay = `importance × exp(-λ·Δt) × log(1+access_count)`; pinned bypasses decay |
+| MCP | Official `mcp` Python SDK, both stdio and SSE transports sharing one tool registry |
+| Job queue | Celery 5.4 + Redis 7.2, beat for cadence |
+| Observability | OpenTelemetry (OTLP gRPC) + Prometheus metrics + structlog JSON |
+| Stack | Python 3.12, FastAPI, SQLAlchemy 2.0 async, Pydantic v2, Alembic, Typer, ruff, mypy strict |
+| Layout | uv workspace, 5 packages: `kortex-core`, `kortex-api`, `kortex-mcp`, `kortex-cli`, `kortex-worker` |
+
+## Repository layout
+
+```
+kortex-memory/
+├── pyproject.toml                  # uv workspace root
+├── packages/
+│   ├── kortex-core/                # domain models, db, retrieval, skills, embeddings, llm, storage, security, telemetry
+│   ├── kortex-api/                 # FastAPI app + routers
+│   ├── kortex-mcp/                 # MCP server (stdio + SSE) sharing one tool registry
+│   ├── kortex-cli/                 # `kortex` Typer CLI (admin + user)
+│   └── kortex-worker/              # Celery app, tasks, beat schedule
+├── alembic/                        # single migration tree, owned by kortex-core
+├── docker/                         # api/mcp/worker/cli Dockerfiles + compose.yaml
+├── deploy/{helm,k8s}/              # Helm chart + raw manifests with overlays
+├── docs/                           # mkdocs-material site (architecture, ADRs, ops, api, mcp)
+├── scripts/                        # seed_dev, reset_db, bench_retrieval
+├── tests/{unit,integration,e2e}/   # testcontainers-backed
+└── .github/workflows/              # ci, release (PyPI), docker (GHCR)
+```
+
+Each `packages/*` has its own `pyproject.toml` so CLI and MCP can be released to PyPI independently. `kortex-core` is the only package that talks to Postgres directly; everything else depends on it.
+
+## Database schema (Postgres 16 + pgvector)
+
+Surrogate `BIGINT` IDs + external `public_id UUID` everywhere. `org_id` on every scoped row for tenant isolation. Soft-delete via `deleted_at` on user-visible tables.
+
+**Tenancy & identity**: `orgs`, `workspaces`, `projects`, `users`, `memberships(scope_type, scope_id, role)`.
+
+**Auth**: `api_keys(prefix, key_hash, scope_type, scope_id, scopes TEXT[], expires_at, revoked_at)`, `jwt_revocations`.
+
+**Sessions/conversations/messages**: `sessions(agent_kind, project_id, started_at)`, `conversations(session_id, summary, summary_embedding VECTOR(1024))`, `messages(role, content, tool_name, tool_input/output JSONB)`.
+
+**Memories** — the core:
+```
+memories(
+  id, public_id, org_id, scope_type, scope_id, created_by,
+  source_type, source_ref JSONB,
+  kind ENUM('fact','preference','decision','procedure','code_artifact','event','summary'),
+  title, body, body_tokens,
+  tier ENUM('short','mid','long') DEFAULT 'short',
+  sensitivity ENUM('public','internal','confidential','secret') DEFAULT 'internal',
+  importance REAL DEFAULT 0.5,
+  pinned BOOLEAN DEFAULT false,
+  access_count INT DEFAULT 0,
+  last_accessed_at TIMESTAMPTZ,
+  decay_score REAL DEFAULT 1.0,
+  embedding VECTOR(1024) NOT NULL,
+  embedding_model TEXT NOT NULL,
+  tsv tsvector GENERATED ALWAYS AS (...) STORED,
+  metadata JSONB,
+  expires_at, deleted_at, created_at, updated_at
+)
+```
+Indexes: HNSW on `embedding` (cosine), GIN on `tsv`, GIN trigram on `body`, composite `(org_id, scope_type, scope_id, deleted_at)`, `(tier, decay_score)`, partial on `expires_at`.
+
+**Graph**: `memory_links(from_memory_id, to_memory_id, link_type ENUM('related','derived_from','supersedes','contradicts','part_of'), weight)`.
+
+**Attachments**: `attachments(s3_bucket, s3_key UNIQUE, mime, size_bytes, sha256, processing_status)`, `attachment_chunks(attachment_id, chunk_index, content, embedding VECTOR(1024), tsv)`.
+
+**Ops**: `jobs` (user-visible only — Celery's own state stays internal), `audit_log` (append-only, rolled up monthly).
+
+Migrations via **Alembic** (single tree under `/alembic`). First migration creates `pgvector`, `pg_trgm`, `citext` extensions.
+
+## Core domain modules — `kortex-core`
+
+```
+src/kortex_core/
+├── settings/config.py              # KortexSettings (pydantic-settings, KORTEX_ prefix)
+├── db/{engine,base,session,types}.py
+├── models/{org,user,api_key,session,memory,attachment,job,audit}.py
+├── repositories/                   # async, all enforce tenancy via BaseRepository.tenant_query
+│   └── memory_repo.py              # incl. hybrid_search(), upsert_with_embedding()
+├── services/
+│   ├── auth_service.py
+│   ├── access_control.py           # AccessControl.check(principal, action, resource)
+│   ├── memory_service.py
+│   ├── ingestion_service.py
+│   ├── attachment_service.py       # presign + finalize flow
+│   ├── retrieval_service.py        # plain hybrid retrieval
+│   └── agentic_retriever.py        # the agent loop (see below)
+├── embeddings/                     # protocol + adapters: local_bge (default), openai, voyage, cohere, anthropic
+├── llm/                            # protocol + adapters: anthropic (default), openai, openrouter, ollama
+├── storage/                        # protocol + adapters: s3 (default), fs (dev/test)
+├── skills/                         # server-side pluggable strategies — protocols + default impls
+│   ├── decay_policy.py             # ExponentialDecayPolicy
+│   ├── summarizer.py               # LLMSummarizer (claude-haiku)
+│   ├── access_policy.py            # RoleSensitivityPolicy
+│   ├── reranker.py                 # BgeReranker
+│   ├── consolidator.py             # LLMConsolidator (mid → long)
+│   └── importance_scorer.py        # HybridScorer (heuristic + LLM judge)
+├── retrieval/{hybrid,reranker_pipeline,agent_loop,token_budget,query_plan}.py
+├── security/{api_keys,jwt,passwords,rate_limit,principal}.py
+└── telemetry/{otel,logging,metrics}.py
+```
+
+## Agentic retrieval design
+
+`AgenticRetriever` (`services/agentic_retriever.py`) drives the recall flow:
+
+1. **Pre-filter**: `AccessControl.visible_scopes(principal)` returns the readable `(scope_type, scope_id)` set; sensitivity is bounded by role.
+2. **Plan (LLM #1)**: planner LLM emits a structured `QueryPlan` (Pydantic, via tool calling) — list of `SemanticSearch | KeywordSearch | LinkExpand | TimeFilter | StopAndAnswer` steps.
+3. **Execute**: each step calls `HybridRetriever`. `LinkExpand` walks `memory_links` (max depth 2). All step queries pass through the tenancy chokepoint — planner cannot escape.
+4. **Multi-hop loop**: continue until `StopAndAnswer`, candidates ≥ 200, or hops ≥ 3.
+5. **Rerank**: `BgeReranker` scores candidates; `TokenBudget.fit(candidates, max_tokens)` greedily packs.
+6. **Synthesize (LLM #2, optional)**: claude-haiku produces a `ContextBundle` with citations `[m:public_id]`.
+7. **Record access**: batched UPDATE of `access_count` and `last_accessed_at`.
+8. **Fallback**: if planner LLM fails or `KORTEX_AGENTIC_RETRIEVAL=false`, run plain hybrid + rerank with `plan_trace="fallback:hybrid"`.
+
+OTel spans: `kortex.retrieval.recall` (root), `.plan`, `.execute_step` (per step), `.rerank`, `.synthesize`.
+
+Hybrid substrate: `embedding <=> :query_vec` (LIMIT 50) + `ts_rank_cd` BM25 (LIMIT 50) + precomputed `decay_score` boost, fused via RRF (k=60). Pinned memories get a +1.0 score floor.
+
+## Memory tiers & decay
+
+- **short**: current session or <24h since access.
+- **mid**: 24h–30d with access, or short with importance ≥ 0.4.
+- **long**: consolidated summaries (`kind='summary'`) with `derived_from` links to originals.
+
+Decay formula:
+```
+decay_score = clamp(
+  importance
+  * exp(-λ_tier * (now - COALESCE(last_accessed_at, created_at)) / 1d)
+  * (1 + ln(1+access_count)) / (1 + ln(1+median_access_count))
+, 0, 1)
+```
+λ: short=0.30/day, mid=0.05/day, long=0.005/day. `pinned=true` → `decay_score=1.0` always.
+
+**Promotions**: short→mid auto when age>24h, importance≥0.4, access_count≥1. mid→long only via consolidation. Hard delete short>7d with decay<0.05; archive mid>180d with decay<0.10.
+
+**Consolidation** (daily 03:00 UTC per org): HDBSCAN cluster mid memories per (scope, kind), `LLMConsolidator` produces a summary memory + `derived_from` links to members, members keep their tier but get `decay_score *= 0.5`.
+
+## MCP server surface
+
+Single `mcp.Server` in `packages/kortex-mcp/src/kortex_mcp/server.py`, exported over both `transports/stdio.py` and `transports/sse.py`. Auth: stdio reads `KORTEX_API_KEY` env; SSE expects `Authorization: Bearer <api_key>`.
+
+Tools: `remember`, `recall`, `search_memory`, `get_context_bundle`, `get_memory`, `list_memories`, `update_memory`, `update_memory_sensitivity`, `delete_memory`, `link_memories`, `unlink_memories`, `pin_memory`, `unpin_memory`, `attach_file`, `finalize_attachment`, `get_attachment`, `list_sessions`, `start_session`, `end_session`, `summarize_session`, `list_scopes`.
+
+Resources: `kortex://memory/{id}`, `kortex://session/{id}/summary`, `kortex://attachment/{id}`.
+
+Prompts: `kortex.recall`, `kortex.consolidate_recent`.
+
+## REST API surface
+
+FastAPI, OpenAPI auto-generated, RFC 7807 ProblemDetails, cursor pagination, `Idempotency-Key` on POSTs, `If-Match`/ETags on memory PATCH.
+
+Routers under `packages/kortex-api/src/kortex_api/routers/`:
+`auth`, `orgs`, `workspaces`, `projects`, `users`, `api_keys`, `sessions`, `conversations`, `messages`, `memories`, `attachments`, `search` (`/search` hybrid + `/recall` agentic), `ingest` (messages/document/git_log), `jobs`, `audit`, `admin` (superuser: `reindex_embeddings`, `force_decay_tick`).
+
+Health: `/livez`, `/readyz`, `/metrics`.
+
+## CLI surface — `kortex` (Typer)
+
+Reads `~/.config/kortex/config.toml` or `KORTEX_API_URL`/`KORTEX_API_KEY`. Supports `--json`, `--profile`. Groups: `auth`, `org`, `workspace`, `project`, `user`, `key`, `session`, `memory`, `attachment`, `search`, `recall`, `ingest`, `export`, `admin` (`migrate`, `db`, `worker`, `reindex-embeddings`, `force-decay-tick`).
+
+Admin commands talk to DB via `kortex_core` (need `KORTEX_DATABASE_URL`); user commands go through `kortex-api` over HTTPS.
+
+## Background jobs (Celery + Redis)
+
+| Task | Cadence | Purpose |
+|---|---|---|
+| `embed_pending` | every 30s | batch-embed memories with NULL/stale embedding |
+| `decay_tick` | every 6h, fan-out per-org | recompute decay_score, apply tier transitions |
+| `consolidate_tier` | daily 03:00 UTC per-org | HDBSCAN cluster mid → write long-tier summaries |
+| `process_attachment` | on-demand | extract text (PyMuPDF/python-docx/pandoc), chunk, embed |
+| `generate_summary` | every 5 min | summarize idle conversations (>30 min, no summary) |
+| `audit_rollup` | daily 04:00 UTC | aggregate, archive raw past 90d to S3 |
+| `key_rotation_check` | hourly | warn/auto-revoke expiring keys |
+| `extract_memories_from_messages` | on-demand | LLM extracts atomic memories from message windows |
+| `reindex_embeddings` | on-demand (admin) | full reindex when default model changes |
+
+Queues: `embed`, `default`, `slow`, `beat`. Retry: exp backoff 2s..600s, max 5. DLQ: `dlq:<task>` with `kortex worker dlq replay`.
+
+## Security & multi-tenancy enforcement
+
+**Single chokepoint**: every query in `repositories/*` must go through `BaseRepository.tenant_query()`, which injects `org_id` filter and visible scopes. CI lint rule (custom ruff plugin under `tools/ruff_plugins/tenant_check.py`) blocks raw `select(Model)` in repositories.
+
+**Principal**: `kortex_core.security.principal.Principal` lives in a `ContextVar` set by API/MCP middleware; carries `actor_id`, `actor_kind`, `org_id`, `scope_bindings`, `roles`, `key_scopes`, `max_sensitivity`.
+
+**RBAC × sensitivity matrix** (in `RoleSensitivityPolicy`):
+- viewer: read ≤ confidential, no write
+- member: read/write ≤ confidential
+- admin: read/write ≤ secret, scope-local admin
+- owner: full
+
+**API key format**: `kx_<prefix8>_<secret43>`, prefix queryable, secret hashed via argon2id (t=2, m=64MB, p=4). Lookup by prefix, then constant-time argon2 verify.
+
+**Rate limits** (Redis Lua token bucket): 600 read/min, 120 write/min, 30 recall/min per key.
+
+**Audit log**: written from `AuditingMiddleware` (state-changing endpoints) and from services (worker actions); append-only, no UPDATE permission for app role.
+
+**Encryption**: optional envelope encryption (libsodium) for `sensitivity='secret'` memory bodies, KEK from `KORTEX_KMS_KEY` or AWS KMS.
+
+## Observability
+
+OTel SDK 1.27+ → OTLP gRPC. Resource attrs: `service.name`, `service.namespace=kortex`, `deployment.environment`, `org.id` (baggage).
+
+Top spans: `kortex.retrieval.recall` (+ children), `kortex.embed.batch`, `kortex.agent.loop_step`, `kortex.decay.tick`, `kortex.consolidate.cluster`, `kortex.attachment.process`. SQLAlchemy auto-instrumentation sampled 5% in prod.
+
+Key metrics: `kortex_retrieval_latency_seconds{phase}`, `kortex_retrieval_candidates{phase}`, `kortex_embed_throughput_tokens_per_second`, `kortex_agent_hops`, `kortex_decay_duration_seconds{org}`, `kortex_api_requests_total{route,method,status}`, `kortex_rate_limit_blocked_total{key}`, `kortex_db_pool_in_use`.
+
+Logs: structlog JSON; every line has `trace_id`, `span_id`, `org_id`, `principal_id`, `request_id`. Memory bodies scrubbed.
+
+Ship 6 Grafana dashboards under `deploy/observability/grafana/`: Retrieval Performance, Embedding Pipeline, Decay & Consolidation, Tenancy Health, API SLOs, DB Health.
+
+## Build / dev tooling
+
+uv 0.4+ workspace; Python 3.12 only. ruff (lint+format), mypy strict, pytest 8 + pytest-asyncio (mode=auto), testcontainers (`pgvector/pgvector:pg16`, `redis:7`, `minio/minio`), VCR.py for LLM cassettes, pre-commit hooks (incl. alembic-autogen-check). Coverage gate 85%.
+
+GitHub Actions: `ci.yaml` (lint/type/test matrix per package), `release.yaml` (tag → `uv build` → PyPI trusted publishing), `docker.yaml` (GHCR push).
+
+## Critical files to be created
+
+| Path | Purpose |
+|---|---|
+| `pyproject.toml` (root) | uv workspace declaration |
+| `alembic/env.py`, `alembic/versions/0001_initial.py` | migration scaffolding + extensions |
+| `packages/kortex-core/src/kortex_core/models/memory.py` | the central domain entity |
+| `packages/kortex-core/src/kortex_core/repositories/base.py` | tenancy chokepoint |
+| `packages/kortex-core/src/kortex_core/repositories/memory_repo.py` | hybrid_search, upsert_with_embedding |
+| `packages/kortex-core/src/kortex_core/services/agentic_retriever.py` | the agent loop |
+| `packages/kortex-core/src/kortex_core/retrieval/{hybrid,agent_loop,token_budget}.py` | retrieval substrate |
+| `packages/kortex-core/src/kortex_core/skills/{decay_policy,summarizer,reranker,consolidator,access_policy,importance_scorer}.py` | strategy interfaces + defaults |
+| `packages/kortex-core/src/kortex_core/embeddings/local_bge.py` | default embedder |
+| `packages/kortex-core/src/kortex_core/llm/anthropic.py` | default LLM |
+| `packages/kortex-core/src/kortex_core/storage/s3.py` | default blob store |
+| `packages/kortex-core/src/kortex_core/security/principal.py` | Principal contextvar |
+| `packages/kortex-api/src/kortex_api/app.py` | FastAPI factory |
+| `packages/kortex-mcp/src/kortex_mcp/server.py` | MCP tool registry |
+| `packages/kortex-mcp/src/kortex_mcp/transports/{stdio,sse}.py` | dual transports |
+| `packages/kortex-cli/src/kortex_cli/main.py` | Typer root |
+| `packages/kortex-worker/src/kortex_worker/celery_app.py` + `tasks/{embedding,decay,consolidate,attachments,audit,keys}.py` | jobs |
+| `docker/compose.yaml` | postgres+pgvector, redis, minio, api, mcp, worker, beat |
+| `deploy/helm/kortex/` | chart for prod |
+| `tools/ruff_plugins/tenant_check.py` | CI rule blocking un-scoped queries |
+
+---
+
+# Milestones
+
+Each milestone is end-to-end runnable. Total: ~14 engineer-weeks for v0.1.0 from one engineer; ~8 calendar weeks parallelized across two.
+
+## ✅ M1 — Foundation (≈2.5w) — **DONE**
+
+**Scope:** uv workspace, CI, `kortex-core` settings/db/auth models, alembic 0001 (extensions + tenancy/auth tables), `auth_service` + `api_key_service` + `access_control`, `kortex-api` auth/org/workspace/project/users/keys routers, `kortex-cli` matching groups, docker compose.
+
+**Definition of done:** `kortex auth login` then `kortex memory list` returns "no memories".
+
+**Delivered files (~85):**
+- Workspace root: `pyproject.toml`, `.python-version`, `.gitignore`, `.env.example`, `README.md`, `Makefile`, `.editorconfig`, `.pre-commit-config.yaml`.
+- 5 package skeletons under `packages/`, each with its own `pyproject.toml`, `README.md`, `src/<pkg>/__init__.py`, `py.typed`.
+- `kortex-core`:
+  - `settings/config.py` — KortexSettings with full env-driven config.
+  - `db/{base,engine,session,types}.py` — SQLAlchemy 2.0 async, naming convention, all enums.
+  - `models/{mixins,org,user,api_key,audit}.py` — Org/Workspace/Project/User/Membership/ApiKey/JwtRevocation/AuditLog with relationships.
+  - `repositories/` — `base.py` with tenancy chokepoint (`tenant_query`), `org_repo`, `workspace_repo`, `project_repo`, `user_repo`, `membership_repo`, `api_key_repo`, `audit_repo`.
+  - `services/` — `auth_service` (login + JWT mint + principal materialization from JWT/API key), `api_key_service` (mint/list/revoke), `access_control` (RBAC × sensitivity), `org_service`, `workspace_service`, `project_service`, `user_service`.
+  - `security/` — `passwords` (argon2id), `api_keys` (kx_prefix_secret format), `jwt` (HS512), `principal` (ContextVar), `rate_limit` (Redis Lua token bucket).
+  - `telemetry/` — `logging` (structlog JSON + trace/span/request_id enrichment), `otel` (lazy OTLP setup), `metrics`.
+- `alembic.ini`, `alembic/env.py` (async-aware), `alembic/script.py.mako`, `alembic/versions/0001_initial.py` creating extensions (pgvector, pg_trgm, citext, uuid-ossp), enums, and all M1 tables with full indexing.
+- `kortex-api`: `app.py` (factory + lifespan), `main.py` (uvicorn entry), `deps.py` (auth dependency), `errors.py` (RFC 7807), `middleware/context.py` (request_id + principal binding), routers: `auth`, `orgs`, `workspaces`, `projects`, `users`, `api_keys`, `health`. Pydantic v2 schemas under `schemas/`.
+- `kortex-cli`: `main.py` (Typer root), `config.py` (TOML profiles in user config dir), `client.py` (httpx client with auth/retries), `output.py` (rich tables + JSON), command groups: `auth`, `org`, `workspace`, `project`, `user`, `key`, `memory` (M2 stub), `admin` (alembic helpers).
+- `docker/compose.yaml` (postgres+pgvector, redis, minio + bucket init, api), `docker/api.Dockerfile` (multi-stage uv build).
+- `scripts/seed_dev.py` — creates org/workspace/project/admin user + scoped API key, prints plaintext once.
+- `.github/workflows/ci.yaml` — lint, type, unit test, integration test (with PG+Redis services).
+- `tests/`:
+  - `unit/test_security.py` — password/api_key/jwt roundtrips.
+  - `unit/test_access_control.py` — RBAC × sensitivity matrix.
+  - `unit/test_settings.py` — env-driven settings.
+  - `integration/test_orgs.py` — superuser org create/read smoke test.
+
+**Verification:** `uv sync && docker compose -f docker/compose.yaml up -d && make migrate && make seed && uv run pytest -m unit`.
+
+---
+
+## ⏳ M2 — Memories + Hybrid Search (≈2w)
+
+**Scope:**
+- Models: `Session`, `Conversation`, `Message`, `Memory`, `MemoryLink` with HNSW + GIN + trigram indexes (Alembic 0002).
+- Embeddings: `Embedder` Protocol in `embeddings/protocol.py`, `embeddings/local_bge.py` default (sentence-transformers + BAAI/bge-large-en-v1.5), registry, `embeddings/openai.py` adapter.
+- Services: `MemoryService` (CRUD + pin), `IngestionService` (messages/JSONL).
+- Repository: `MemoryRepo.hybrid_search(query, scopes, top_k)` doing vector + BM25 + recency boost via RRF.
+- API routers: `sessions`, `conversations`, `messages`, `memories`, `search` (`/search` only; `/recall` stub).
+- CLI: `session`, `memory`, `search` groups (full).
+- Worker: `kortex-worker` package (Celery app + beat) with `embed_pending` task on 30s cadence.
+
+**Definition of done:** ingest a JSONL of messages, `kortex search "X"` returns ranked results.
+
+**Pending files:**
+- `packages/kortex-core/src/kortex_core/models/{session,memory,attachment_stub}.py`
+- `packages/kortex-core/src/kortex_core/embeddings/{protocol,local_bge,openai,registry}.py`
+- `packages/kortex-core/src/kortex_core/repositories/{session_repo,conversation_repo,message_repo,memory_repo,memory_link_repo}.py`
+- `packages/kortex-core/src/kortex_core/services/{session_service,memory_service,ingestion_service,retrieval_service}.py`
+- `packages/kortex-core/src/kortex_core/retrieval/{hybrid,token_budget}.py`
+- `packages/kortex-api/src/kortex_api/routers/{sessions,conversations,messages,memories,search,ingest}.py`
+- `packages/kortex-api/src/kortex_api/schemas/{session,memory,search}.py`
+- `packages/kortex-cli/src/kortex_cli/cmds/{session,memory,search,ingest}.py` (replace M1 stub).
+- `packages/kortex-worker/src/kortex_worker/{celery_app,beat,main}.py` + `tasks/embedding.py`.
+- `alembic/versions/0002_memories.py`.
+
+---
+
+## ⏳ M3 — MCP stdio (≈1w)
+
+**Scope:**
+- `kortex-mcp` server with canonical tool set: `remember`, `recall` (calls `HybridRetriever` for now — agentic comes in M5), `search_memory`, `get_memory`, `list_memories`, `update_memory`, `delete_memory`, `link_memories`, `pin_memory`, `list_sessions`, `start_session`, `end_session`.
+- `transports/stdio.py` and `main.py` (`kortex-mcp stdio`).
+- Auth from `KORTEX_API_KEY` env via `kortex_core.services.auth_service`.
+- Integration test using `mcp` SDK's in-process test harness.
+
+**Definition of done:** Claude Code configured to use `kortex-mcp stdio` can store/recall memories.
+
+**Pending files:**
+- `packages/kortex-mcp/src/kortex_mcp/{server,main,auth}.py`.
+- `packages/kortex-mcp/src/kortex_mcp/transports/stdio.py`.
+- `packages/kortex-mcp/src/kortex_mcp/tools/{memory,session,search}.py`.
+- `tests/integration/test_mcp_stdio.py`.
+
+---
+
+## ⏳ M4 — Attachments + S3 (≈1.5w)
+
+**Scope:**
+- Models: `Attachment`, `AttachmentChunk` with HNSW + GIN (Alembic 0003).
+- Storage: `BlobStore` Protocol in `storage/protocol.py`, `storage/s3.py` (aiobotocore), `storage/fs.py` (dev/test).
+- Service: `AttachmentService` with presign PUT + finalize flow.
+- Worker task: `process_attachment` — download from S3, extract text (PyMuPDF/python-docx/pandoc), chunk (512 tokens, 64 overlap), embed, mark `ready`.
+- API: `attachments` router, extends `search` with `/search/attachments`.
+- MCP: `attach_file`, `finalize_attachment`, `get_attachment` tools.
+- CLI: `attachment` group.
+
+**Definition of done:** `kortex attachment upload sample.pdf --scope project:my-proj` succeeds, `process_attachment` runs, `kortex search "term-from-pdf"` returns chunk-level matches.
+
+**Pending files:**
+- `packages/kortex-core/src/kortex_core/models/attachment.py`.
+- `packages/kortex-core/src/kortex_core/storage/{protocol,s3,fs}.py`.
+- `packages/kortex-core/src/kortex_core/repositories/{attachment_repo,attachment_chunk_repo}.py`.
+- `packages/kortex-core/src/kortex_core/services/attachment_service.py`.
+- `packages/kortex-api/src/kortex_api/routers/attachments.py` + schemas.
+- `packages/kortex-mcp/src/kortex_mcp/tools/attachments.py`.
+- `packages/kortex-cli/src/kortex_cli/cmds/attachment.py`.
+- `packages/kortex-worker/src/kortex_worker/tasks/attachments.py`.
+- `alembic/versions/0003_attachments.py`.
+
+---
+
+## ⏳ M5 — Agentic Retrieval (≈1.5w)
+
+**Scope:**
+- LLM: `LLM` Protocol in `llm/protocol.py`, `llm/anthropic.py` (default), `llm/openai.py`, `llm/openrouter.py`, `llm/ollama.py`.
+- Skill: `Reranker` Protocol with `BgeReranker` default.
+- Retrieval: `retrieval/agent_loop.py`, `retrieval/query_plan.py`, `retrieval/reranker_pipeline.py`.
+- Service: `AgenticRetriever` (`services/agentic_retriever.py`) with fallback to plain hybrid when LLM unavailable or `KORTEX_AGENTIC_RETRIEVAL=false`.
+- API: `/v1/search/recall` returns `ContextBundle`.
+- MCP: upgrade `recall` to call `AgenticRetriever`; add `get_context_bundle`.
+- OTel spans wired across `kortex.retrieval.*`.
+
+**Definition of done:** `kortex recall "what did we decide about caching?" --synthesize` returns a synthesized answer with citations and the OTel trace shows the plan/execute/rerank/synthesize phases.
+
+**Pending files:**
+- `packages/kortex-core/src/kortex_core/llm/{protocol,registry,anthropic,openai,openrouter,ollama}.py`.
+- `packages/kortex-core/src/kortex_core/skills/reranker.py`.
+- `packages/kortex-core/src/kortex_core/retrieval/{agent_loop,query_plan,reranker_pipeline}.py`.
+- `packages/kortex-core/src/kortex_core/services/agentic_retriever.py`.
+- `packages/kortex-cli/src/kortex_cli/cmds/recall.py`.
+- API + MCP changes.
+
+---
+
+## ⏳ M6 — Decay, Consolidation, Tiers, Skills (≈1.5w)
+
+**Scope:**
+- Formalize all 6 skill protocols + defaults: `DecayPolicy` (ExponentialDecayPolicy), `ImportanceScorer` (HybridScorer), `Summarizer` (LLMSummarizer/claude-haiku), `Consolidator` (LLMConsolidator), `AccessPolicy` (RoleSensitivityPolicy — already in M1).
+- Worker tasks: `decay_tick` (every 6h, fan-out per-org), `consolidate_tier` (daily 03:00 UTC, HDBSCAN), `generate_summary` (every 5 min, idle convos).
+- Beat schedule wired.
+- Pin bypass verified at every decay/promotion/delete step.
+- Admin endpoints: `force_decay_tick`, `reindex_embeddings`.
+
+**Definition of done:** Idle the dev cluster a day with seed data: `mid` memories appear, summaries get created with `derived_from` links.
+
+**Pending files:**
+- `packages/kortex-core/src/kortex_core/skills/{decay_policy,summarizer,consolidator,importance_scorer}.py` (plus access_policy formalize).
+- `packages/kortex-worker/src/kortex_worker/tasks/{decay,consolidate,summary}.py`.
+- `packages/kortex-worker/src/kortex_worker/beat.py` (full schedule).
+- `packages/kortex-api/src/kortex_api/routers/admin.py`.
+
+---
+
+## ⏳ M7 — MCP HTTP/SSE + Multi-tenant Hardening (≈1w)
+
+**Scope:**
+- `kortex-mcp/transports/sse.py` (`kortex-mcp serve --port 8765`) with `Authorization: Bearer` handshake.
+- Per-key rate limits enforced via Redis Lua token bucket (already built in M1).
+- Sensitivity tier filtering verified across every retrieval path: hybrid `/search`, agentic `/recall`, MCP `recall`, attachment chunk search.
+- Tests asserting that a `viewer` cannot see `secret` memories under any path.
+- `kortex-mcp` Docker image + helm values.
+
+**Definition of done:** A remote browser/client connects to MCP over SSE with a scoped API key; the same tools work as stdio. Tenancy regression test green.
+
+**Pending files:**
+- `packages/kortex-mcp/src/kortex_mcp/transports/sse.py`.
+- `docker/mcp.Dockerfile`.
+- `tests/integration/test_tenancy_regression.py` (the cross-org/cross-sensitivity leak test).
+- `tools/ruff_plugins/tenant_check.py` (CI rule).
+
+---
+
+## ⏳ M8 — CLI Full Coverage + Ingest/Export (≈1w)
+
+**Scope:**
+- `kortex ingest messages|document|git-log` — fully wired.
+- `kortex export --scope ... -o backup.tar.zst` — streaming export including attachments.
+- `kortex admin migrate/db/worker/...` — full coverage.
+- `--json`/`--profile`/output formatting polish.
+- Idempotency keys + ETag/If-Match wired through API.
+
+**Definition of done:** Round-trip a project from one cluster to another via `kortex export` then `kortex import`.
+
+**Pending files:**
+- `packages/kortex-cli/src/kortex_cli/cmds/{ingest,export}.py` extended.
+- `packages/kortex-api/src/kortex_api/middleware/idempotency.py`.
+- `packages/kortex-api/src/kortex_api/middleware/etag.py`.
+
+---
+
+## ⏳ M9 — K8s + Observability Hardening (≈1.5w)
+
+**Scope:**
+- Helm chart at `deploy/helm/kortex/` with HPA on api (CPU + RPS) and worker (queue depth metric).
+- `NetworkPolicy` isolating db/redis/minio.
+- Prometheus rules + the 6 Grafana dashboards under `deploy/observability/grafana/`.
+- Backup `CronJob` (pg_dump → S3 + minio mirror).
+- Operator runbooks in `docs/operators/`.
+- Loadtest: `scripts/bench_retrieval.py` extended; target recall p99 <1.2s @ 50 RPS.
+
+**Definition of done:** Deploy via `helm install kortex deploy/helm/kortex` to a real K8s cluster; loadtest passes; dashboards green.
+
+**Pending files:**
+- `deploy/helm/kortex/{Chart.yaml,values.yaml}` + `templates/{api-deploy,mcp-deploy,worker-deploy,beat-deploy,hpa,ingress,sa,netpol,backup-cronjob}.yaml`.
+- `deploy/k8s/{base,overlays/{dev,staging,prod}}/`.
+- `deploy/observability/grafana/dashboards/*.json`.
+- `deploy/observability/prometheus/rules.yaml`.
+- `docs/operators/{deploy,scale,backup,rotate-keys,runbooks}.md`.
+
+---
+
+## ⏳ M10 — Polish, Docs, Release (≈1w)
+
+**Scope:**
+- mkdocs-material site (`docs/mkdocs.yml`) deployed via `gh-pages`.
+- OpenAPI spec published; Postman collection in `docs/api/`.
+- CHANGELOG + ADRs (`docs/architecture/adr/0001-*.md`).
+- PyPI release of all 5 packages from a single tag (`release.yaml`).
+- GHCR images tagged.
+- Quickstart: `pip install kortex-cli` to "Claude Code is using me as memory" in <10 minutes.
+
+**Definition of done:** Tag `v0.1.0`. From a fresh shell: `pip install kortex-cli`, point Claude Code's MCP config at `kortex-mcp stdio`, end-to-end works.
+
+**Pending files:**
+- `docs/mkdocs.yml`, `docs/index.md`, `docs/architecture/`, `docs/developers/`, `docs/api/`, `docs/mcp/`.
+- `CHANGELOG.md`.
+- `.github/workflows/{release,docker}.yaml`.
+
+---
+
+## End-to-end verification (after M1–M5)
+
+1. `make dev` — compose up postgres+pgvector, redis, minio, api, mcp, worker.
+2. `make migrate` — alembic upgrade head; `make seed` — create org/workspace/project/api-key.
+3. `kortex auth login` and verify whoami.
+4. `kortex ingest messages tests/fixtures/sample_chat.jsonl --session <id>` — wait for `embed_pending` to drain.
+5. `kortex search "caching decisions"` — expect ranked hybrid results.
+6. `kortex recall "caching decisions" --synthesize` — expect `ContextBundle` with citations and OTel trace `kortex.retrieval.recall` visible in collector.
+7. Configure Claude Code's MCP config to launch `kortex-mcp stdio` with `KORTEX_API_KEY=<key>`; in a Claude Code session, call `recall` and `remember` tools, then in a fresh session verify the memory persists.
+8. Upload a PDF: `kortex attachment upload sample.pdf --scope project:my-proj`; wait for `process_attachment`; `kortex search "term-from-pdf"` returns chunk-level hits.
+9. `pytest -q` (unit + integration) — green; coverage ≥ 85%.
+10. After M9: deploy via `helm install kortex deploy/helm/kortex` to a real K8s cluster, run `scripts/bench_retrieval.py --rps 50 --duration 5m`, verify p99 recall <1.2s on Grafana "Retrieval Performance" dashboard.
+
+**Tenancy regression test (must run in CI):** create two orgs A and B, populate memories in each, issue an API key scoped to A, hit every read endpoint and every retrieval path (hybrid, agentic, MCP recall, attachment search) — assert zero rows from B leak. Same test asserts a `viewer` cannot see `secret` memories under any path.
