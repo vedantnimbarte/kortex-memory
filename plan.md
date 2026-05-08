@@ -1,6 +1,8 @@
 # Kortex Memory — Build Plan
 
-> **Status snapshot (2026-05-08):** M1 (Foundation) complete. M2–M10 pending.
+> **Status snapshot (2026-05-08):** M1 (Foundation) ✅ and M2 (Memories + Hybrid Search) ✅ complete. M3 (MCP stdio) in progress. M4–M10 pending.
+>
+> **Progress: 2 of 10 milestones complete.**
 
 ## Context
 
@@ -270,6 +272,36 @@ GitHub Actions: `ci.yaml` (lint/type/test matrix per package), `release.yaml` (t
 
 Each milestone is end-to-end runnable. Total: ~14 engineer-weeks for v0.1.0 from one engineer; ~8 calendar weeks parallelized across two.
 
+## Task tracker
+
+| # | Milestone | Task | Status |
+|---|---|---|---|
+| 1 | M1 | Scaffold uv workspace and 5 packages | ✅ |
+| 2 | M1 | Build kortex-core foundation | ✅ |
+| 3 | M1 | Add tenancy and auth models | ✅ |
+| 4 | M1 | Wire Alembic and write 0001 migration | ✅ |
+| 5 | M1 | Implement repositories and services for M1 | ✅ |
+| 6 | M1 | Build kortex-api with M1 routers | ✅ |
+| 7 | M1 | Build kortex-cli with M1 command groups | ✅ |
+| 8 | M1 | Add Docker Compose and seed script | ✅ |
+| 9 | M1 | Set up CI tooling | ✅ |
+| 10 | M2 | Add session/memory models + 0002 migration | ✅ |
+| 11 | M2 | Embeddings protocol + local_bge default | ✅ |
+| 12 | M2 | Memory repos + services + hybrid search | ✅ |
+| 13 | M2 | API + CLI for memories/sessions/search | ✅ |
+| 14 | M2 | kortex-worker with embed_pending | ✅ |
+| 15 | M3 | MCP server with stdio transport | 🔄 in progress |
+| 16 | M4 | Attachment models + 0003 migration | ⏳ pending |
+| 17 | M4 | Storage layer + S3 adapter | ⏳ pending |
+| 18 | M4 | AttachmentService + process_attachment worker task | ⏳ pending |
+| 19 | M4 | Attachments API + MCP tools + CLI | ⏳ pending |
+| – | M5 | Agentic retrieval (LLM planner, reranker, ContextBundle) | ⏳ not yet broken into tasks |
+| – | M6 | Decay, consolidation, tier promotion, full skill protocols | ⏳ not yet broken into tasks |
+| – | M7 | MCP HTTP/SSE + tenancy hardening | ⏳ not yet broken into tasks |
+| – | M8 | CLI full coverage + ingest/export + idempotency/ETags | ⏳ not yet broken into tasks |
+| – | M9 | K8s + observability (Helm, dashboards, runbooks, loadtest) | ⏳ not yet broken into tasks |
+| – | M10 | Polish, docs, PyPI/GHCR release | ⏳ not yet broken into tasks |
+
 ## ✅ M1 — Foundation (≈2.5w) — **DONE**
 
 **Scope:** uv workspace, CI, `kortex-core` settings/db/auth models, alembic 0001 (extensions + tenancy/auth tables), `auth_service` + `api_key_service` + `access_control`, `kortex-api` auth/org/workspace/project/users/keys routers, `kortex-cli` matching groups, docker compose.
@@ -303,30 +335,58 @@ Each milestone is end-to-end runnable. Total: ~14 engineer-weeks for v0.1.0 from
 
 ---
 
-## ⏳ M2 — Memories + Hybrid Search (≈2w)
+## ✅ M2 — Memories + Hybrid Search (≈2w) — **DONE**
 
-**Scope:**
-- Models: `Session`, `Conversation`, `Message`, `Memory`, `MemoryLink` with HNSW + GIN + trigram indexes (Alembic 0002).
-- Embeddings: `Embedder` Protocol in `embeddings/protocol.py`, `embeddings/local_bge.py` default (sentence-transformers + BAAI/bge-large-en-v1.5), registry, `embeddings/openai.py` adapter.
-- Services: `MemoryService` (CRUD + pin), `IngestionService` (messages/JSONL).
-- Repository: `MemoryRepo.hybrid_search(query, scopes, top_k)` doing vector + BM25 + recency boost via RRF.
-- API routers: `sessions`, `conversations`, `messages`, `memories`, `search` (`/search` only; `/recall` stub).
-- CLI: `session`, `memory`, `search` groups (full).
-- Worker: `kortex-worker` package (Celery app + beat) with `embed_pending` task on 30s cadence.
+**Scope:** memory schema with vector + FTS + trigram indexes, default local embedder, hybrid retrieval substrate (RRF), CRUD + ingestion services, REST + CLI surfaces, Celery worker scaffolding with `embed_pending`.
 
-**Definition of done:** ingest a JSONL of messages, `kortex search "X"` returns ranked results.
+**Definition of done:** ingest a JSONL of messages, `kortex search "X"` returns ranked results. ✅
 
-**Pending files:**
-- `packages/kortex-core/src/kortex_core/models/{session,memory,attachment_stub}.py`
-- `packages/kortex-core/src/kortex_core/embeddings/{protocol,local_bge,openai,registry}.py`
-- `packages/kortex-core/src/kortex_core/repositories/{session_repo,conversation_repo,message_repo,memory_repo,memory_link_repo}.py`
-- `packages/kortex-core/src/kortex_core/services/{session_service,memory_service,ingestion_service,retrieval_service}.py`
-- `packages/kortex-core/src/kortex_core/retrieval/{hybrid,token_budget}.py`
-- `packages/kortex-api/src/kortex_api/routers/{sessions,conversations,messages,memories,search,ingest}.py`
-- `packages/kortex-api/src/kortex_api/schemas/{session,memory,search}.py`
-- `packages/kortex-cli/src/kortex_cli/cmds/{session,memory,search,ingest}.py` (replace M1 stub).
-- `packages/kortex-worker/src/kortex_worker/{celery_app,beat,main}.py` + `tasks/embedding.py`.
-- `alembic/versions/0002_memories.py`.
+**Delivered files:**
+- **Models:**
+  - `packages/kortex-core/src/kortex_core/models/session.py` — `Session`, `Conversation`, `Message` (w/ `summary_embedding VECTOR(1024)`).
+  - `packages/kortex-core/src/kortex_core/models/memory.py` — `Memory` (with computed `tsv` tsvector, all enums, full index plan), `MemoryLink`.
+  - `packages/kortex-core/src/kortex_core/models/__init__.py` updated to register them.
+- **Migration:**
+  - `alembic/versions/20260508_0002_kkx0002_memories_sessions.py` — creates 7 enum types, 5 tables, HNSW index on `embedding` (`m=16, ef_construction=64`), GIN on `tsv`, GIN trigram on `body`, composite tenancy index.
+- **Embeddings:**
+  - `packages/kortex-core/src/kortex_core/embeddings/__init__.py`, `protocol.py` (`Embedder` Protocol), `registry.py` (lazy factories), `local_bge.py` (sentence-transformers, threadpool-offloaded), `openai.py` (Matryoshka 1024-truncated `text-embedding-3-large`).
+- **Retrieval substrate:**
+  - `packages/kortex-core/src/kortex_core/retrieval/__init__.py`, `hybrid.py` (`HybridSearchHit`, `rrf_fuse` with pinned floor), `token_budget.py` (greedy budget packer).
+- **Repositories:**
+  - `packages/kortex-core/src/kortex_core/repositories/memory_repo.py` — CRUD, `list_pending_embedding`, `set_embedding`, `record_access`, `hybrid_search` (vector + BM25 + RRF + decay multiplier, sensitivity-bounded, scope-filtered).
+  - `packages/kortex-core/src/kortex_core/repositories/session_repo.py` — `SessionRepository`, `ConversationRepository`, `MessageRepository` (with `append_bulk` for ingest).
+  - `packages/kortex-core/src/kortex_core/repositories/memory_link_repo.py` — `link`, `unlink`, `neighbors`.
+  - `packages/kortex-core/src/kortex_core/repositories/__init__.py` updated.
+- **Services:**
+  - `packages/kortex-core/src/kortex_core/services/memory_service.py` — CRUD + linking + access bookkeeping; `CreateMemoryInput` dataclass; access control on write.
+  - `packages/kortex-core/src/kortex_core/services/session_service.py` — `SessionService`, `ConversationService` (with `append_message`, `list_messages`).
+  - `packages/kortex-core/src/kortex_core/services/retrieval_service.py` — `SearchRequest`, `SearchResult`, embedder fallback to BM25 only, batched access bookkeeping.
+  - `packages/kortex-core/src/kortex_core/services/ingestion_service.py` — bulk message ingest with default conversation, document → memory.
+  - `packages/kortex-core/src/kortex_core/services/__init__.py` updated.
+- **API:**
+  - `packages/kortex-api/src/kortex_api/schemas/{session,memory,search}.py`.
+  - `packages/kortex-api/src/kortex_api/routers/sessions.py` — start/get/end.
+  - `packages/kortex-api/src/kortex_api/routers/conversations.py` — create/list, message append/list.
+  - `packages/kortex-api/src/kortex_api/routers/memories.py` — create/list/get/patch/delete + pin/unpin + link/unlink.
+  - `packages/kortex-api/src/kortex_api/routers/search.py` — `POST /v1/search` hybrid.
+  - `packages/kortex-api/src/kortex_api/routers/ingest.py` — `POST /v1/ingest/sessions/{id}/messages`.
+  - `packages/kortex-api/src/kortex_api/app.py` updated to mount the new routers.
+- **CLI:**
+  - `packages/kortex-cli/src/kortex_cli/cmds/session.py` — start/show/end.
+  - `packages/kortex-cli/src/kortex_cli/cmds/memory.py` — list/create/show/update/delete/pin/unpin/link (replaces M1 stub).
+  - `packages/kortex-cli/src/kortex_cli/cmds/search.py` — `kortex search "<query>"`.
+  - `packages/kortex-cli/src/kortex_cli/cmds/ingest.py` — `messages <jsonl>`, `document <file>`.
+  - `packages/kortex-cli/src/kortex_cli/main.py` updated.
+- **Worker:**
+  - `packages/kortex-worker/src/kortex_worker/celery_app.py` — Celery factory, queue routes (`embed`, `default`, `slow`, `beat`), beat schedule with `embed_pending` every 30s.
+  - `packages/kortex-worker/src/kortex_worker/tasks/__init__.py`, `tasks/embedding.py` — async batch embedder.
+  - `packages/kortex-worker/src/kortex_worker/main.py` — `worker`/`beat`/`run-once` subcommands.
+  - `packages/kortex-worker/pyproject.toml` updated with `[full]` extra pulling kortex-core[embeddings-local,attachments,clustering,storage-s3].
+- **Docker:**
+  - `docker/worker.Dockerfile`.
+  - `docker/compose.yaml` — added `worker` and `beat` services.
+- **Tests:**
+  - `tests/unit/test_retrieval.py` — RRF fusion, pinned floor, token budget packing.
 
 ---
 

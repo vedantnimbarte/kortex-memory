@@ -15,7 +15,20 @@ from kortex_core.telemetry.otel import configure_otel
 
 from kortex_api.errors import http_exception_handler
 from kortex_api.middleware.context import RequestContextMiddleware
-from kortex_api.routers import api_keys, auth, health, orgs, projects, users, workspaces
+from kortex_api.routers import (
+    api_keys,
+    auth,
+    conversations,
+    health,
+    ingest,
+    memories,
+    orgs,
+    projects,
+    search,
+    sessions,
+    users,
+    workspaces,
+)
 
 
 @asynccontextmanager
@@ -52,6 +65,11 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(users.router)
     app.include_router(api_keys.router)
+    app.include_router(sessions.router)
+    app.include_router(conversations.router)
+    app.include_router(memories.router)
+    app.include_router(search.router)
+    app.include_router(ingest.router)
 
     return app
 

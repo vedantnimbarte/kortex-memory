@@ -15,6 +15,13 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.48b0",
 ]
 
+[project.optional-dependencies]
+# Convenience aggregator — install with `kortex-worker[full]` to pull in the
+# embedding model + attachment processing libs needed by background tasks.
+full = [
+    "kortex-core[embeddings-local,attachments,clustering,storage-s3]",
+]
+
 [project.scripts]
 kortex-worker = "kortex_worker.main:main"
 

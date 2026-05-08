@@ -1,0 +1,158 @@
+"""Memory + MemoryLink (the heart of the system)."""
+
+from __future__ import annotations
+
+import datetime as dt
+
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Computed,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from kortex_core.db.base import Base
+from kortex_core.db.types import (
+    MemoryKind,
+    MemoryLinkType,
+    MemorySource,
+    MemoryTier,
+    Sensitivity,
+)
+from kortex_core.models.mixins import PublicIdMixin, SoftDeleteMixin, TimestampMixin
+from kortex_core.models.user import scope_type_enum
+
+memory_tier_enum = ENUM(
+    *[t.value for t in MemoryTier],
+    name="memory_tier",
+    create_type=False,
+)
+sensitivity_enum = ENUM(
+    *[s.value for s in Sensitivity],
+    name="sensitivity",
+    create_type=False,
+)
+memory_kind_enum = ENUM(
+    *[k.value for k in MemoryKind],
+    name="memory_kind",
+    create_type=False,
+)
+memory_source_enum = ENUM(
+    *[s.value for s in MemorySource],
+    name="memory_source",
+    create_type=False,
+)
+memory_link_type_enum = ENUM(
+    *[lt.value for lt in MemoryLinkType],
+    name="memory_link_type",
+    create_type=False,
+)
+
+
+class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "memories"
+    __table_args__ = (
+        Index("ix_memories_tenant", "org_id", "scope_type", "scope_id", "deleted_at"),
+        Index("ix_memories_tier_decay", "tier", "decay_score"),
+        Index(
+            "ix_memories_expires_at",
+            "expires_at",
+            postgresql_where=text("expires_at IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    org_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False
+    )
+    scope_type: Mapped[str] = mapped_column(scope_type_enum, nullable=False)
+    scope_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    source_type: Mapped[str] = mapped_column(
+        memory_source_enum, nullable=False, default=MemorySource.MANUAL.value
+    )
+    source_ref: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    kind: Mapped[str] = mapped_column(
+        memory_kind_enum, nullable=False, default=MemoryKind.FACT.value
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    body_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    tier: Mapped[str] = mapped_column(
+        memory_tier_enum, nullable=False, default=MemoryTier.SHORT.value
+    )
+    sensitivity: Mapped[str] = mapped_column(
+        sensitivity_enum, nullable=False, default=Sensitivity.INTERNAL.value
+    )
+    importance: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_accessed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decay_score: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''))",
+            persisted=True,
+        ),
+        nullable=False,
+    )
+
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+    expires_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class MemoryLink(Base):
+    __tablename__ = "memory_links"
+    __table_args__ = (
+        Index("ix_memory_links_to", "to_memory_id"),
+    )
+
+    from_memory_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("memories.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    to_memory_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("memories.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    link_type: Mapped[str] = mapped_column(
+        memory_link_type_enum,
+        primary_key=True,
+        default=MemoryLinkType.RELATED.value,
+    )
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    from_memory: Mapped[Memory] = relationship(foreign_keys=[from_memory_id])
+    to_memory: Mapped[Memory] = relationship(foreign_keys=[to_memory_id])
