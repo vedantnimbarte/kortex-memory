@@ -1,0 +1,134 @@
+"""Application settings.
+
+All settings are loaded from environment variables prefixed with ``KORTEX_``.
+Process-wide singleton via :func:`get_settings`. Tests can override by clearing
+the lru_cache and re-instantiating.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Environment = Literal["development", "test", "staging", "production"]
+
+
+class KortexSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="KORTEX_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    env: Environment = "development"
+
+    # --- Database ---
+    database_url: str = Field(
+        default="postgresql+asyncpg://kortex:kortex@localhost:5432/kortex",
+        description="Async SQLAlchemy DSN. Must use the asyncpg driver.",
+    )
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: int = 30
+    db_echo: bool = False
+
+    # --- Redis ---
+    redis_url: str = "redis://localhost:6379/0"
+
+    # --- S3 ---
+    s3_endpoint_url: str | None = "http://localhost:9000"
+    s3_region: str = "us-east-1"
+    s3_bucket: str = "kortex-attachments"
+    s3_access_key: SecretStr = SecretStr("minioadmin")
+    s3_secret_key: SecretStr = SecretStr("minioadmin")
+    s3_use_ssl: bool = False
+
+    # --- Auth ---
+    jwt_secret: SecretStr = SecretStr(
+        "dev-only-secret-replace-with-32-random-bytes-base64-encoded"
+    )
+    jwt_algorithm: str = "HS512"
+    jwt_access_ttl_seconds: int = 3600
+    jwt_refresh_ttl_seconds: int = 60 * 60 * 24 * 30
+    api_key_prefix_length: int = 8
+    api_key_secret_length: int = 43
+
+    # --- Embeddings ---
+    embedder: str = "local_bge"
+    embedder_model: str = "BAAI/bge-large-en-v1.5"
+    embedder_dim: int = 1024
+    embedder_batch_size: int = 64
+    openai_api_key: SecretStr | None = None
+    voyage_api_key: SecretStr | None = None
+    cohere_api_key: SecretStr | None = None
+
+    # --- LLM ---
+    llm_provider: str = "anthropic"
+    llm_model_planner: str = "claude-sonnet-4-7"
+    llm_model_summarizer: str = "claude-haiku-4-5"
+    anthropic_api_key: SecretStr | None = None
+    openrouter_api_key: SecretStr | None = None
+    ollama_base_url: str = "http://localhost:11434"
+
+    # --- Retrieval ---
+    agentic_retrieval: bool = True
+    retrieval_max_hops: int = 3
+    retrieval_max_candidates: int = 200
+    retrieval_top_k_vector: int = 50
+    retrieval_top_k_bm25: int = 50
+    retrieval_rrf_k: int = 60
+    retrieval_default_max_tokens: int = 4000
+
+    # --- Memory tiers / decay ---
+    decay_lambda_short: float = 0.30
+    decay_lambda_mid: float = 0.05
+    decay_lambda_long: float = 0.005
+    decay_short_to_mid_age_hours: int = 24
+    decay_short_delete_age_days: int = 7
+    decay_short_delete_threshold: float = 0.05
+    decay_mid_archive_age_days: int = 180
+    decay_mid_archive_threshold: float = 0.10
+
+    # --- Telemetry ---
+    otel_enabled: bool = False
+    otel_endpoint: str = "http://localhost:4317"
+    otel_service_name: str = "kortex"
+    log_level: str = "INFO"
+    log_json: bool = True
+
+    # --- API ---
+    api_host: str = "0.0.0.0"  # noqa: S104  (binding is operator-controlled)
+    api_port: int = 8000
+    api_cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    api_request_max_bytes: int = 16 * 1024 * 1024
+
+    # --- Rate limiting ---
+    rate_limit_read_per_min: int = 600
+    rate_limit_write_per_min: int = 120
+    rate_limit_recall_per_min: int = 30
+
+    # --- Optional encryption KEK (for sensitivity=secret bodies) ---
+    kms_key: SecretStr | None = None
+    kms_provider: Literal["env", "aws"] = "env"
+
+    @field_validator("api_cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [v.strip() for v in value.split(",") if v.strip()]
+        return value
+
+    @property
+    def is_production(self) -> bool:
+        return self.env == "production"
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> KortexSettings:
+    """Return the process-wide settings singleton."""
+    return KortexSettings()

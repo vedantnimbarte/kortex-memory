@@ -1,0 +1,215 @@
+"""Auth service: login, JWT mint, principal materialization."""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Iterable
+from dataclasses import dataclass
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from kortex_core.db.types import ActorKind, Role, ScopeType, Sensitivity
+from kortex_core.repositories.api_key_repo import ApiKeyRepository
+from kortex_core.repositories.membership_repo import MembershipRepository
+from kortex_core.repositories.user_repo import UserRepository
+from kortex_core.security.api_keys import (
+    parse_api_key,
+    verify_api_key_secret,
+)
+from kortex_core.security.jwt import JwtError, decode_jwt, encode_jwt
+from kortex_core.security.passwords import verify_password
+from kortex_core.security.principal import Principal, ScopeRef
+from kortex_core.services.access_control import AccessControl
+from kortex_core.settings import get_settings
+
+
+class AuthError(Exception):
+    """Raised on invalid credentials/token."""
+
+
+@dataclass(frozen=True, slots=True)
+class LoginResult:
+    user_id: int
+    user_public_id: uuid.UUID
+    access_token: str
+    refresh_token: str
+    expires_in: int
+
+
+@dataclass(frozen=True, slots=True)
+class PrincipalLoad:
+    """Result of materializing a principal from a credential."""
+
+    principal: Principal
+
+
+_KEY_ROLE_TO_SENSITIVITY = {
+    Role.VIEWER: Sensitivity.CONFIDENTIAL,
+    Role.MEMBER: Sensitivity.CONFIDENTIAL,
+    Role.ADMIN: Sensitivity.SECRET,
+    Role.OWNER: Sensitivity.SECRET,
+}
+
+
+class AuthService:
+    """Stateless service; use a fresh instance per request."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+        # The auth service is one of the rare callers that work without a
+        # bound principal — it is the thing that creates the principal.
+        self._users = UserRepository(session)
+        self._memberships = MembershipRepository(session)
+
+    # --- user/password login ---
+
+    async def login_with_password(
+        self, *, email: str, password: str
+    ) -> LoginResult:
+        user = await self._users.get_by_email(email)
+        if user is None or user.password_hash is None:
+            raise AuthError("invalid credentials")
+        if not verify_password(user.password_hash, password):
+            raise AuthError("invalid credentials")
+        await self._users.touch_login(user.id)
+
+        s = get_settings()
+        jti_access = uuid.uuid4()
+        access = encode_jwt(
+            subject=str(user.id),
+            extra={"jti": str(jti_access)},
+            ttl_seconds=s.jwt_access_ttl_seconds,
+            token_type="access",
+        )
+        refresh = encode_jwt(
+            subject=str(user.id),
+            extra={"jti": str(uuid.uuid4())},
+            ttl_seconds=s.jwt_refresh_ttl_seconds,
+            token_type="refresh",
+        )
+        return LoginResult(
+            user_id=user.id,
+            user_public_id=user.public_id,
+            access_token=access,
+            refresh_token=refresh,
+            expires_in=s.jwt_access_ttl_seconds,
+        )
+
+    # --- principal materialization ---
+
+    async def principal_from_jwt(self, token: str) -> PrincipalLoad:
+        try:
+            payload = decode_jwt(token)
+        except JwtError as e:
+            raise AuthError(f"invalid token: {e}") from e
+        sub = payload.get("sub")
+        if not sub:
+            raise AuthError("token missing subject")
+        try:
+            user_id = int(sub)
+        except (TypeError, ValueError) as e:
+            raise AuthError("token subject not an integer") from e
+
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise AuthError("user not found")
+
+        memberships = await self._memberships.list_for_user(user.id)
+        roles: dict[ScopeRef, Role] = {}
+        for m in memberships:
+            try:
+                scope_type = ScopeType(m.scope_type)
+                role = Role(m.role)
+            except ValueError:  # pragma: no cover - data corruption
+                continue
+            roles[ScopeRef(type=scope_type, id=m.scope_id)] = role
+
+        # Pick org from first org-scoped membership (or 0 for unscoped superuser).
+        org_id = next(
+            (s.id for s in roles if s.type == ScopeType.ORG),
+            0,
+        )
+
+        max_sensitivity = self._max_sensitivity(roles.values())
+
+        principal = Principal(
+            actor_id=user.id,
+            actor_kind=ActorKind.USER,
+            org_id=org_id,
+            roles=roles,
+            key_scopes=frozenset(),
+            max_sensitivity=max_sensitivity,
+            is_superuser=user.is_superuser,
+        )
+        return PrincipalLoad(principal=principal)
+
+    async def principal_from_api_key(self, plaintext: str) -> PrincipalLoad:
+        parsed = parse_api_key(plaintext)
+        if parsed is None:
+            raise AuthError("malformed api key")
+        prefix, secret = parsed
+        keys = ApiKeyRepository(self._session, principal=_superuser_principal())
+        key = await keys.get_active_by_prefix(prefix)
+        if key is None or not verify_api_key_secret(secret, key.key_hash):
+            raise AuthError("invalid api key")
+        await keys.touch_used(key)
+
+        # The bound scope on the key drives the visible scope set; we don't
+        # cross-cut user memberships here (api keys are scoped explicitly).
+        roles: dict[ScopeRef, Role] = {}
+        if key.scope_type and key.scope_id:
+            try:
+                roles[ScopeRef(type=ScopeType(key.scope_type), id=key.scope_id)] = (
+                    Role.MEMBER
+                )
+            except ValueError:  # pragma: no cover
+                pass
+        max_sensitivity = self._max_sensitivity(roles.values())
+
+        principal = Principal(
+            actor_id=key.id,
+            actor_kind=ActorKind.API_KEY,
+            org_id=key.org_id,
+            scope=next(iter(roles), None),
+            roles=roles,
+            key_scopes=frozenset(key.scopes),
+            max_sensitivity=max_sensitivity,
+        )
+        return PrincipalLoad(principal=principal)
+
+    @staticmethod
+    def _max_sensitivity(roles: Iterable[Role]) -> Sensitivity:
+        # Highest sensitivity any role grants read access to.
+        best = Sensitivity.PUBLIC
+        ranks = {
+            Sensitivity.PUBLIC: 1,
+            Sensitivity.INTERNAL: 2,
+            Sensitivity.CONFIDENTIAL: 3,
+            Sensitivity.SECRET: 4,
+        }
+        for role in roles:
+            cap = _KEY_ROLE_TO_SENSITIVITY.get(role, Sensitivity.PUBLIC)
+            if ranks[cap] > ranks[best]:
+                best = cap
+        return best
+
+
+def _superuser_principal() -> Principal:
+    """Internal-only super principal for queries that must run before a real
+    principal is bound (e.g. API-key lookup at auth time).
+    """
+    return Principal(
+        actor_id=0,
+        actor_kind=ActorKind.SYSTEM,
+        org_id=0,
+        is_superuser=True,
+    )
+
+
+__all__ = [
+    "AccessControl",
+    "AuthError",
+    "AuthService",
+    "LoginResult",
+    "PrincipalLoad",
+]

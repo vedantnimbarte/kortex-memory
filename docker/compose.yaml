@@ -1,0 +1,87 @@
+name: kortex
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: kortex
+      POSTGRES_PASSWORD: kortex
+      POSTGRES_DB: kortex
+    ports:
+      - "5432:5432"
+    volumes:
+      - kortex-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kortex -d kortex"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - kortex-minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin
+        mc mb -p local/kortex-attachments
+        echo "minio bucket ready"
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      KORTEX_ENV: development
+      KORTEX_DATABASE_URL: postgresql+asyncpg://kortex:kortex@postgres:5432/kortex
+      KORTEX_REDIS_URL: redis://redis:6379/0
+      KORTEX_S3_ENDPOINT_URL: http://minio:9000
+      KORTEX_S3_BUCKET: kortex-attachments
+      KORTEX_S3_ACCESS_KEY: minioadmin
+      KORTEX_S3_SECRET_KEY: minioadmin
+      KORTEX_LOG_JSON: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: ["kortex-api"]
+
+volumes:
+  kortex-pg:
+  kortex-minio:

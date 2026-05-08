@@ -1,0 +1,27 @@
+[project]
+name = "kortex-cli"
+version = "0.1.0"
+description = "Kortex memory CLI (admin + user)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Kortex Memory" }]
+
+dependencies = [
+    "kortex-core",
+    "typer>=0.12.0",
+    "rich>=13.8.0",
+    "httpx>=0.27.0",
+    "tomlkit>=0.13.0",
+    "platformdirs>=4.3.0",
+]
+
+[project.scripts]
+kortex = "kortex_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kortex_cli"]
