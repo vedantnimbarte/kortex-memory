@@ -1,0 +1,108 @@
+# Default Helm values for the kortex chart.
+# Override per-environment under deploy/k8s/overlays/{dev,staging,prod}.
+
+image:
+  registry: ghcr.io/anthropic
+  api:
+    repository: kortex-api
+    tag: "0.1.0"
+  mcp:
+    repository: kortex-mcp
+    tag: "0.1.0"
+  worker:
+    repository: kortex-worker
+    tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+env: production
+
+# Required external services. The chart does NOT ship Postgres/Redis/S3 —
+# operators wire those via secrets so backups + sizing stay in one place.
+postgres:
+  url: ""  # postgresql+asyncpg://...
+redis:
+  url: ""  # redis://...
+s3:
+  endpointUrl: ""
+  region: us-east-1
+  bucket: kortex-attachments
+  accessKeyExistingSecret: kortex-s3
+  accessKeySecretKey: accessKey
+  secretKeyExistingSecret: kortex-s3
+  secretKeySecretKey: secretKey
+
+jwt:
+  existingSecret: kortex-jwt
+  existingSecretKey: secret
+
+api:
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCpuUtilization: 70
+    # Custom metric: HTTP RPS — requires a prometheus-adapter rule on
+    # `kortex_api_requests_total`. The chart provides the rule but assumes
+    # the adapter is installed cluster-wide.
+    rpsTarget: 150
+  ingress:
+    enabled: true
+    className: nginx
+    host: kortex.example.com
+    tlsSecret: kortex-tls
+
+mcp:
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8765
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCpuUtilization: 70
+
+worker:
+  replicas: 2
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 2000m, memory: 4Gi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    # Scales on Redis queue depth via a custom metric.
+    queueDepthTarget: 50
+
+beat:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 100m, memory: 128Mi }
+
+backup:
+  enabled: true
+  schedule: "15 2 * * *"  # 02:15 UTC daily
+  retentionDays: 14
+  s3Prefix: "backups/"
+
+networkPolicy:
+  enabled: true
+
+observability:
+  prometheus:
+    enabled: true
+  otelExporter: "otel-collector.observability:4317"
+
+serviceAccount:
+  name: kortex
+  annotations: {}

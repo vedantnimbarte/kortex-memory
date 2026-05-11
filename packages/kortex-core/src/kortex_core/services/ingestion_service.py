@@ -113,3 +113,44 @@ class IngestionService:
                 source_ref=source_ref,
             )
         )
+
+    async def ingest_git_log(
+        self,
+        *,
+        scope_type: ScopeType,
+        scope_id: int,
+        commits: Iterable[dict],
+        sensitivity: Sensitivity = Sensitivity.INTERNAL,
+    ) -> int:
+        """Turn git commit summaries into memories.
+
+        Each ``commit`` is expected to have ``sha`` and ``message`` keys, with
+        optional ``author``, ``date``, ``files``. The commit message becomes
+        the memory body; the sha is recorded in ``source_ref`` for traceback.
+        """
+        created = 0
+        for commit in commits:
+            sha = str(commit.get("sha") or "").strip()
+            message = str(commit.get("message") or "").strip()
+            if not sha or not message:
+                continue
+            title = message.splitlines()[0][:200]
+            await self._memories.create(
+                CreateMemoryInput(
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    title=title,
+                    body=message,
+                    kind=MemoryKind.EVENT,
+                    sensitivity=sensitivity,
+                    source_type=MemorySource.TOOL_OUTPUT,
+                    source_ref={
+                        "sha": sha,
+                        "author": commit.get("author"),
+                        "date": commit.get("date"),
+                        "files": commit.get("files"),
+                    },
+                )
+            )
+            created += 1
+        return created

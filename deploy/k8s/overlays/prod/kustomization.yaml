@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kortex
+
+resources:
+  - ../../base
+
+helmCharts:
+  - name: kortex
+    releaseName: kortex
+    namespace: kortex
+    path: ../../../helm/kortex
+    valuesInline:
+      env: production
+      api:
+        replicas: 3
+        hpa:
+          minReplicas: 3
+          maxReplicas: 20
+      mcp:
+        replicas: 2
+        hpa:
+          minReplicas: 2
+          maxReplicas: 10
+      worker:
+        replicas: 4
+        hpa:
+          minReplicas: 4
+          maxReplicas: 20
+      backup:
+        retentionDays: 30

@@ -1,0 +1,29 @@
+{
+  "title": "Kortex — DB Health",
+  "uid": "kortex-db",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["kortex", "postgres"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Pool in-use",
+      "targets": [{ "expr": "kortex_db_pool_in_use" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Slow queries (>500ms)",
+      "targets": [
+        { "expr": "rate(pg_stat_statements_total_time_seconds[5m]) and pg_stat_statements_mean_time_seconds > 0.5" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Active connections",
+      "targets": [{ "expr": "pg_stat_activity_count" }]
+    }
+  ]
+}

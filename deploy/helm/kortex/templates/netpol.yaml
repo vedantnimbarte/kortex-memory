@@ -1,0 +1,37 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kortex.fullname" . }}-default-deny
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kortex.matchLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "kortex.matchLabels" . | nindent 14 }}
+        # Ingress controllers (api) — operators wire selectors via overlay.
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432  # Postgres
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 9000  # S3/MinIO
+        - protocol: TCP
+          port: 443   # HTTPS (LLM providers, OTLP)
+        - protocol: TCP
+          port: 4317  # OTLP gRPC
+        - protocol: UDP
+          port: 53    # DNS
+{{- end }}

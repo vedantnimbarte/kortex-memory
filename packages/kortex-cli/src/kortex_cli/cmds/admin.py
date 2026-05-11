@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+from typing import Annotated
 
 import typer
+
+from kortex_cli.client import ApiClient, CliApiError
+from kortex_cli.output import fail, print_obj
 
 app = typer.Typer(help="Server-side admin (DB-direct).", no_args_is_help=True)
 migrate = typer.Typer(help="Alembic migration helpers.", no_args_is_help=True)
@@ -31,3 +35,57 @@ def migrate_current() -> None:
 @migrate.command("history")
 def migrate_history() -> None:
     subprocess.run(["alembic", "history"], check=True)  # noqa: S603,S607
+
+
+@app.command("force-decay-tick")
+def force_decay_tick(
+    org_id: Annotated[int | None, typer.Option()] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Dispatch the decay tick task (superuser API)."""
+    params: dict = {}
+    if org_id is not None:
+        params["org_id"] = org_id
+    with ApiClient() as client:
+        try:
+            result = client.post("/v1/admin/force_decay_tick", params=params)
+        except CliApiError as e:
+            fail(str(e))
+            return
+    print_obj(result, json_output=json_output)
+
+
+@app.command("reindex-embeddings")
+def reindex_embeddings(
+    batch_size: Annotated[int, typer.Option()] = 64,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Clear all embeddings and let embed_pending refill them (superuser API)."""
+    with ApiClient() as client:
+        try:
+            result = client.post(
+                "/v1/admin/reindex_embeddings",
+                json={"batch_size": batch_size},
+            )
+        except CliApiError as e:
+            fail(str(e))
+            return
+    print_obj(result, json_output=json_output)
+
+
+@app.command("consolidate")
+def consolidate(
+    org_id: Annotated[int | None, typer.Option()] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Dispatch the mid→long consolidation task."""
+    params: dict = {}
+    if org_id is not None:
+        params["org_id"] = org_id
+    with ApiClient() as client:
+        try:
+            result = client.post("/v1/admin/consolidate_tier", params=params)
+        except CliApiError as e:
+            fail(str(e))
+            return
+    print_obj(result, json_output=json_output)

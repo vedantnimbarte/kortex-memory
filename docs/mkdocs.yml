@@ -1,0 +1,53 @@
+site_name: Kortex Memory
+site_description: Production-grade memory layer for LLMs and AI coding agents.
+site_url: https://kortex-memory.dev
+repo_url: https://github.com/anthropic/kortex-memory
+repo_name: kortex-memory
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - ADRs:
+          - 0001 Choose pgvector + HNSW: architecture/adr/0001-pgvector-hnsw.md
+          - 0002 Agentic retrieval over LLM-only: architecture/adr/0002-agentic-retrieval.md
+          - 0003 Pluggable skills: architecture/adr/0003-pluggable-skills.md
+  - Developers:
+      - Setup: developers/setup.md
+      - Testing: developers/testing.md
+  - API:
+      - REST: api/rest.md
+      - MCP: api/mcp.md
+  - Operators:
+      - Deploy: operators/deploy.md
+      - Scale: operators/scale.md
+      - Backup: operators/backup.md
+      - Rotate keys: operators/rotate-keys.md
+      - Runbooks: operators/runbooks.md

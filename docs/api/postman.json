@@ -1,0 +1,103 @@
+{
+  "info": {
+    "name": "Kortex Memory",
+    "_postman_id": "kortex-memory-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "api_key", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        { "name": "Liveness", "request": { "method": "GET", "url": "{{base_url}}/livez" } },
+        { "name": "Readiness", "request": { "method": "GET", "url": "{{base_url}}/readyz" } }
+      ]
+    },
+    {
+      "name": "Memories",
+      "item": [
+        {
+          "name": "Create memory",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/memories",
+            "header": [
+              { "key": "X-API-Key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope_type\": \"project\",\n  \"scope_id\": 1,\n  \"body\": \"Use Redis with a 5min TTL for the search cache.\",\n  \"title\": \"caching\",\n  \"importance\": 0.8\n}"
+            }
+          }
+        },
+        {
+          "name": "List memories",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/memories?scope_type=project&scope_id=1",
+            "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Hybrid search",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/search",
+            "header": [
+              { "key": "X-API-Key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"caching strategy\",\n  \"limit\": 20\n}"
+            }
+          }
+        },
+        {
+          "name": "Agentic recall",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/search/recall",
+            "header": [
+              { "key": "X-API-Key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"what did we decide about caching?\",\n  \"synthesize\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Attachments",
+      "item": [
+        {
+          "name": "Presign upload",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/attachments/presign",
+            "header": [
+              { "key": "X-API-Key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope_type\": \"project\",\n  \"scope_id\": 1,\n  \"filename\": \"design.pdf\",\n  \"mime\": \"application/pdf\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

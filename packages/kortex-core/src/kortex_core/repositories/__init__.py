@@ -1,6 +1,11 @@
 """Async repositories. All repositories enforce tenancy via :class:`BaseRepository`."""
 
 from kortex_core.repositories.api_key_repo import ApiKeyRepository
+from kortex_core.repositories.attachment_repo import (
+    AttachmentChunkHit,
+    AttachmentChunkRepository,
+    AttachmentRepository,
+)
 from kortex_core.repositories.audit_repo import AuditRepository
 from kortex_core.repositories.base import BaseRepository, TenantViolationError
 from kortex_core.repositories.membership_repo import MembershipRepository
@@ -18,6 +23,9 @@ from kortex_core.repositories.workspace_repo import WorkspaceRepository
 
 __all__ = [
     "ApiKeyRepository",
+    "AttachmentChunkHit",
+    "AttachmentChunkRepository",
+    "AttachmentRepository",
     "AuditRepository",
     "BaseRepository",
     "ConversationRepository",

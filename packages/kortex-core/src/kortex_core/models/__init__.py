@@ -5,6 +5,7 @@ Model imports here populate ``Base.metadata`` for Alembic autogenerate.
 
 from kortex_core.db.base import Base
 from kortex_core.models.api_key import ApiKey, JwtRevocation
+from kortex_core.models.attachment import Attachment, AttachmentChunk
 from kortex_core.models.audit import AuditLog
 from kortex_core.models.memory import Memory, MemoryLink
 from kortex_core.models.mixins import (
@@ -18,6 +19,8 @@ from kortex_core.models.user import Membership, User
 
 __all__ = [
     "ApiKey",
+    "Attachment",
+    "AttachmentChunk",
     "AuditLog",
     "Base",
     "Conversation",

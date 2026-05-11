@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kortex-staging
+
+resources:
+  - ../../base
+
+helmCharts:
+  - name: kortex
+    releaseName: kortex
+    namespace: kortex-staging
+    path: ../../../helm/kortex
+    valuesInline:
+      env: staging
+      api:
+        replicas: 2
+      mcp:
+        replicas: 1
+      worker:
+        replicas: 2
+      backup:
+        retentionDays: 7

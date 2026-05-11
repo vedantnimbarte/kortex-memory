@@ -56,6 +56,12 @@ def conflict(detail: str) -> ProblemDetail:
     )
 
 
+def bad_request(detail: str) -> ProblemDetail:
+    return ProblemDetail(
+        status_code=status.HTTP_400_BAD_REQUEST, title="Bad Request", detail=detail
+    )
+
+
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
     if isinstance(exc.detail, dict) and "type" in exc.detail:
         return JSONResponse(

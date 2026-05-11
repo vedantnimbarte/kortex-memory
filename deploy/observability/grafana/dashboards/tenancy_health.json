@@ -1,0 +1,32 @@
+{
+  "title": "Kortex — Tenancy Health",
+  "uid": "kortex-tenancy",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["kortex", "tenancy", "security"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Cross-org violation attempts (5m)",
+      "targets": [{ "expr": "increase(kortex_tenant_violation_total[5m])" }],
+      "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Rate-limit blocked (per bucket)",
+      "targets": [
+        { "expr": "sum by (bucket) (rate(kortex_rate_limit_blocked_total[5m]))", "legendFormat": "{{bucket}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Sensitivity filter rejections",
+      "targets": [
+        { "expr": "rate(kortex_access_denied_total[5m])", "legendFormat": "denied" }
+      ]
+    }
+  ]
+}

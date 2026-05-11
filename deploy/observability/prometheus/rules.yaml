@@ -1,0 +1,71 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kortex-rules
+  labels:
+    app.kubernetes.io/part-of: kortex
+spec:
+  groups:
+    - name: kortex.api.slos
+      interval: 30s
+      rules:
+        - alert: KortexApiHighErrorRate
+          expr: |
+            (
+              sum(rate(kortex_api_requests_total{status=~"5.."}[5m]))
+              /
+              sum(rate(kortex_api_requests_total[5m]))
+            ) > 0.02
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: ">2% 5xx error rate on the kortex API"
+            description: "Sustained 5xx error rate over 2% — investigate /readyz on api pods."
+
+        - alert: KortexApiLatencyP99
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le, route) (rate(kortex_api_request_duration_seconds_bucket[5m]))
+            ) > 1.5
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "API p99 latency >1.5s"
+            description: "Check DB connection pool, embedder timing."
+
+    - name: kortex.retrieval
+      interval: 30s
+      rules:
+        - alert: KortexRecallSlow
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(kortex_retrieval_latency_seconds_bucket{phase="recall"}[5m])) by (le)
+            ) > 1.2
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Recall p99 latency above target (1.2s)"
+            description: "Inspect planner/reranker spans; consider disabling agentic_retrieval temporarily."
+
+    - name: kortex.embed
+      interval: 30s
+      rules:
+        - alert: KortexEmbedBacklog
+          expr: |
+            redis_queue_depth{queue="embed"} > 500
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "Embedding backlog growing"
+            description: "embed_pending isn't keeping up; scale worker HPA up."
+
+    - name: kortex.tenancy
+      interval: 60s
+      rules:
+        - alert: KortexCrossOrgViolation
+          expr: increase(kortex_tenant_violation_total[5m]) > 0
+          for: 0m
+          labels: { severity: critical }
+          annotations:
+            summary: "Cross-org query attempt"
+            description: "BaseRepository.assert_same_org tripped. Investigate immediately."

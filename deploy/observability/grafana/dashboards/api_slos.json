@@ -1,0 +1,35 @@
+{
+  "title": "Kortex — API SLOs",
+  "uid": "kortex-api-slos",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["kortex", "api"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests/sec by route",
+      "targets": [
+        { "expr": "sum by (route) (rate(kortex_api_requests_total[5m]))", "legendFormat": "{{route}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Error rate (5xx/total)",
+      "targets": [
+        { "expr": "sum(rate(kortex_api_requests_total{status=~\"5..\"}[5m])) / sum(rate(kortex_api_requests_total[5m]))" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Latency p50/p95/p99",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(kortex_api_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kortex_api_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(kortex_api_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+      ]
+    }
+  ]
+}

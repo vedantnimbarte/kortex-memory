@@ -17,6 +17,10 @@ def make_celery() -> Celery:
         backend=s.redis_url,
         include=[
             "kortex_worker.tasks.embedding",
+            "kortex_worker.tasks.attachments",
+            "kortex_worker.tasks.decay",
+            "kortex_worker.tasks.consolidate",
+            "kortex_worker.tasks.summary",
         ],
     )
     app.conf.update(
@@ -33,20 +37,42 @@ def make_celery() -> Celery:
             "kortex.embedding.*": {"queue": "embed"},
             "kortex.decay.*": {"queue": "slow"},
             "kortex.consolidate.*": {"queue": "slow"},
+            "kortex.summary.*": {"queue": "slow"},
             "kortex.attachment.*": {"queue": "default"},
             "kortex.audit.*": {"queue": "slow"},
         },
         broker_connection_retry_on_startup=True,
     )
 
-    # Beat schedule for cadence-driven tasks. We start with embed_pending; M6 adds the rest.
+    # Beat schedule for cadence-driven tasks (plan §K).
     app.conf.beat_schedule = {
         "embed-pending": {
             "task": "kortex.embedding.embed_pending",
             "schedule": 30.0,
         },
+        "decay-tick": {
+            # Every 6h, fan-out per-org from the task body.
+            "task": "kortex.decay.decay_tick",
+            "schedule": 6 * 3600.0,
+        },
+        "consolidate-tier": {
+            # Daily at 03:00 UTC; Celery beat uses crontab semantics here.
+            "task": "kortex.consolidate.consolidate_tier",
+            "schedule": _daily_at(3, 0),
+        },
+        "generate-summary": {
+            "task": "kortex.summary.generate_summary",
+            "schedule": 5 * 60.0,
+        },
     }
     return app
+
+
+def _daily_at(hour: int, minute: int) -> object:
+    """Crontab schedule helper — kept inline so callers don't need to know Celery's API."""
+    from celery.schedules import crontab
+
+    return crontab(hour=hour, minute=minute)
 
 
 celery_app = make_celery()

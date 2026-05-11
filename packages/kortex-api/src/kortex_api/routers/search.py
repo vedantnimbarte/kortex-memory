@@ -1,17 +1,29 @@
-"""Search router (hybrid only in M2; agentic /recall lands in M5)."""
+"""Search router (hybrid + agentic recall)."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
 from kortex_core.repositories.memory_repo import ScopeFilter
+from kortex_core.services.agentic_retriever import (
+    AgenticRetriever,
+    RecallRequest,
+)
 from kortex_core.services.retrieval_service import (
     RetrievalService,
     SearchRequest,
 )
 
 from kortex_api.deps import PrincipalDep, SessionDep
-from kortex_api.schemas.search import SearchHitOut, SearchIn, SearchOut
+from kortex_api.schemas.search import (
+    CitationOut,
+    ContextBundleOut,
+    RecallCandidateOut,
+    RecallIn,
+    SearchHitOut,
+    SearchIn,
+    SearchOut,
+)
 
 router = APIRouter(prefix="/v1/search", tags=["search"])
 
@@ -51,4 +63,51 @@ async def search(
             )
             for h in result.hits
         ],
+    )
+
+
+@router.post("/recall", response_model=ContextBundleOut)
+async def recall(
+    payload: RecallIn, principal: PrincipalDep, session: SessionDep
+) -> ContextBundleOut:
+    scopes = (
+        [ScopeFilter(scope_type=s.scope_type, scope_id=s.scope_id) for s in payload.scopes]
+        if payload.scopes
+        else None
+    )
+    retriever = AgenticRetriever(session, principal)
+    bundle = await retriever.recall(
+        RecallRequest(
+            query=payload.query,
+            scopes=scopes,
+            synthesize=payload.synthesize,
+            max_tokens=payload.max_tokens,
+            per_item_max=payload.per_item_max,
+        )
+    )
+    await session.commit()
+    return ContextBundleOut(
+        query=bundle.query,
+        answer=bundle.answer,
+        citations=[
+            CitationOut(public_id=c.public_id, title=c.title, score=c.score)
+            for c in bundle.citations
+        ],
+        candidates=[
+            RecallCandidateOut(
+                public_id=r.hit.public_id,
+                title=r.hit.title,
+                body=r.hit.body,
+                tier=r.hit.tier,
+                sensitivity=r.hit.sensitivity,
+                final_score=r.final_score,
+                rerank_score=r.rerank_score,
+            )
+            for r in bundle.candidates
+        ],
+        used_tokens=bundle.used_tokens,
+        plan_trace=bundle.plan_trace,
+        plan_rationale=bundle.plan_rationale,
+        hops=bundle.hops,
+        stopped_reason=bundle.stopped_reason,
     )

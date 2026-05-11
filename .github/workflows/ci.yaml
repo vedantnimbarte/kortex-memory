@@ -21,6 +21,7 @@ jobs:
       - run: uv sync --all-packages --dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - run: uv run python -m tools.ruff_plugins.tenant_check .
 
   type:
     runs-on: ubuntu-latest

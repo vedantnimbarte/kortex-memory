@@ -48,6 +48,15 @@ class KortexSettings(BaseSettings):
     s3_secret_key: SecretStr = SecretStr("minioadmin")
     s3_use_ssl: bool = False
 
+    # --- Blob storage ---
+    storage_backend: Literal["s3", "fs"] = "s3"
+    fs_storage_root: str = "./.kortex-blobs"
+
+    # --- Attachments ---
+    attachment_chunk_tokens: int = 512
+    attachment_chunk_overlap: int = 64
+    attachment_max_bytes: int = 64 * 1024 * 1024
+
     # --- Auth ---
     jwt_secret: SecretStr = SecretStr(
         "dev-only-secret-replace-with-32-random-bytes-base64-encoded"

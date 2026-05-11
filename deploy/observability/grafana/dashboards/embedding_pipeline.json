@@ -1,0 +1,33 @@
+{
+  "title": "Kortex — Embedding Pipeline",
+  "uid": "kortex-embedding",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["kortex", "embeddings"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Throughput (tokens/sec)",
+      "targets": [
+        { "expr": "rate(kortex_embed_throughput_tokens_per_second_sum[5m])", "legendFormat": "tokens/sec" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "embed_pending backlog (Redis queue)",
+      "targets": [
+        { "expr": "redis_queue_depth{queue=\"embed\"}", "legendFormat": "queue depth" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Active embedder model",
+      "targets": [
+        { "expr": "kortex_embedder_info", "legendFormat": "{{model}}" }
+      ]
+    }
+  ]
+}

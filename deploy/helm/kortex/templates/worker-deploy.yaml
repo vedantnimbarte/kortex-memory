@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kortex.fullname" . }}-worker
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "kortex.matchLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "kortex.matchLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: worker
+          image: {{ include "kortex.image" (dict "Values" .Values "repo" .Values.image.worker.repository "tag" .Values.image.worker.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["kortex-worker", "worker"]
+          env:
+            {{- include "kortex.envCommon" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

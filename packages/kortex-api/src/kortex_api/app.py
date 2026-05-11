@@ -15,10 +15,16 @@ from kortex_core.telemetry.otel import configure_otel
 
 from kortex_api.errors import http_exception_handler
 from kortex_api.middleware.context import RequestContextMiddleware
+from kortex_api.middleware.etag import EtagMiddleware
+from kortex_api.middleware.idempotency import IdempotencyMiddleware
+from kortex_api.middleware.ratelimit import RateLimitMiddleware
 from kortex_api.routers import (
+    admin,
     api_keys,
+    attachments,
     auth,
     conversations,
+    export,
     health,
     ingest,
     memories,
@@ -55,6 +61,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(EtagMiddleware)
+    app.add_middleware(IdempotencyMiddleware)
+    app.add_middleware(RateLimitMiddleware)
 
     app.add_exception_handler(HTTPException, http_exception_handler)
 
@@ -68,8 +77,11 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(conversations.router)
     app.include_router(memories.router)
+    app.include_router(attachments.router)
     app.include_router(search.router)
     app.include_router(ingest.router)
+    app.include_router(export.router)
+    app.include_router(admin.router)
 
     return app
 

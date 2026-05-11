@@ -1,0 +1,79 @@
+{{- if .Values.api.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kortex.fullname" . }}-api
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kortex.fullname" . }}-api
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.api.hpa.targetCpuUtilization }}
+    - type: Pods
+      pods:
+        metric:
+          name: kortex_api_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "{{ .Values.api.hpa.rpsTarget }}"
+{{- end }}
+{{- if .Values.mcp.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kortex.fullname" . }}-mcp
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kortex.fullname" . }}-mcp
+  minReplicas: {{ .Values.mcp.hpa.minReplicas }}
+  maxReplicas: {{ .Values.mcp.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.mcp.hpa.targetCpuUtilization }}
+{{- end }}
+{{- if .Values.worker.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kortex.fullname" . }}-worker
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kortex.fullname" . }}-worker
+  minReplicas: {{ .Values.worker.hpa.minReplicas }}
+  maxReplicas: {{ .Values.worker.hpa.maxReplicas }}
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: redis_queue_depth
+          selector:
+            matchLabels:
+              queue: embed
+        target:
+          type: AverageValue
+          averageValue: "{{ .Values.worker.hpa.queueDepthTarget }}"
+{{- end }}

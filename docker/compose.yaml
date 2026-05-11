@@ -82,6 +82,26 @@ services:
       - "8000:8000"
     command: ["kortex-api"]
 
+  mcp:
+    build:
+      context: ..
+      dockerfile: docker/mcp.Dockerfile
+    environment:
+      KORTEX_ENV: development
+      KORTEX_DATABASE_URL: postgresql+asyncpg://kortex:kortex@postgres:5432/kortex
+      KORTEX_REDIS_URL: redis://redis:6379/0
+      KORTEX_S3_ENDPOINT_URL: http://minio:9000
+      KORTEX_S3_BUCKET: kortex-attachments
+      KORTEX_S3_ACCESS_KEY: minioadmin
+      KORTEX_S3_SECRET_KEY: minioadmin
+      KORTEX_LOG_JSON: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8765:8765"
+    command: ["kortex-mcp", "serve", "--host", "0.0.0.0", "--port", "8765"]
+
   worker:
     build:
       context: ..

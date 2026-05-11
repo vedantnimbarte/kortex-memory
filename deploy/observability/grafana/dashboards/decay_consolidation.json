@@ -1,0 +1,32 @@
+{
+  "title": "Kortex — Decay & Consolidation",
+  "uid": "kortex-decay",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["kortex", "decay"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Decay tick duration per org",
+      "targets": [
+        { "expr": "rate(kortex_decay_duration_seconds_sum[1h]) / rate(kortex_decay_duration_seconds_count[1h])", "legendFormat": "{{org}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Memories promoted short→mid (last 24h)",
+      "targets": [{ "expr": "increase(kortex_decay_promotions_total[24h])" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Consolidator clusters / summaries written",
+      "targets": [
+        { "expr": "rate(kortex_consolidate_clusters_total[1h])", "legendFormat": "clusters" },
+        { "expr": "rate(kortex_consolidate_summaries_total[1h])", "legendFormat": "summaries" }
+      ]
+    }
+  ]
+}

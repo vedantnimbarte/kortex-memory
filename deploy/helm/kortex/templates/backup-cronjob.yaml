@@ -1,0 +1,50 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kortex.fullname" . }}-backup
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.backup.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              env:
+                - name: KORTEX_DATABASE_URL
+                  value: {{ .Values.postgres.url | quote }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.s3.accessKeyExistingSecret }}
+                      key: {{ .Values.s3.accessKeySecretKey }}
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.s3.secretKeyExistingSecret }}
+                      key: {{ .Values.s3.secretKeySecretKey }}
+                - name: S3_BUCKET
+                  value: {{ .Values.s3.bucket | quote }}
+                - name: S3_PREFIX
+                  value: {{ .Values.backup.s3Prefix | quote }}
+                - name: RETENTION_DAYS
+                  value: "{{ .Values.backup.retentionDays }}"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  apk add --no-cache aws-cli
+                  STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+                  FILE=kortex-${STAMP}.sql.gz
+                  pg_dump "${KORTEX_DATABASE_URL}" | gzip > /tmp/${FILE}
+                  aws s3 cp /tmp/${FILE} s3://${S3_BUCKET}/${S3_PREFIX}${FILE}
+{{- end }}

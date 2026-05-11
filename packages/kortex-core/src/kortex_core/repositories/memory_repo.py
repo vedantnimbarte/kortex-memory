@@ -151,7 +151,7 @@ class MemoryRepository(BaseRepository[Memory]):
     async def list_pending_embedding(self, *, limit: int = 64) -> list[Memory]:
         s = get_settings()
         stmt = (
-            select(Memory)
+            self.tenant_query()
             .where(Memory.deleted_at.is_(None))
             .where(
                 (Memory.embedding.is_(None))
@@ -183,6 +183,86 @@ class MemoryRepository(BaseRepository[Memory]):
                 last_accessed_at=now,
             )
         )
+
+    # ---- decay / consolidation maintenance ----
+
+    async def list_orgs_with_memories(self) -> list[int]:
+        """Return distinct org ids that have non-deleted memories (worker fan-out)."""
+        stmt = text(
+            "SELECT DISTINCT org_id FROM memories WHERE deleted_at IS NULL"
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [int(r[0]) for r in rows]
+
+    async def median_access_count(self, org_id: int) -> int:
+        """Approximate median (Postgres ``percentile_cont``) used to normalise decay."""
+        stmt = text(
+            "SELECT COALESCE("
+            " percentile_cont(0.5) WITHIN GROUP (ORDER BY access_count)"
+            " FILTER (WHERE org_id = :org_id AND deleted_at IS NULL), 1)"
+        )
+        row = (await self._session.execute(stmt, {"org_id": org_id})).first()
+        if not row:
+            return 1
+        return int(row[0] or 1)
+
+    async def iter_for_decay(
+        self, org_id: int, *, batch_size: int = 500
+    ) -> Sequence[Memory]:
+        """Pull memories for a single org so we can score them in Python.
+
+        Pinned memories are skipped at the SQL level — the policy clamps them
+        to 1.0 anyway and we don't want to take their row lock unnecessarily.
+        Worker callers pass a superuser principal so ``tenant_query`` becomes
+        a pure pass-through; the explicit ``org_id`` predicate is the actual
+        scope.
+        """
+        stmt = (
+            self.tenant_query()
+            .where(Memory.org_id == org_id)
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.pinned.is_(False))
+            .limit(batch_size)
+            .order_by(Memory.id)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return list(rows)
+
+    async def apply_decay(
+        self,
+        memory_id: int,
+        *,
+        decay_score: float,
+        new_tier: str | None = None,
+    ) -> None:
+        values: dict[str, object] = {"decay_score": decay_score}
+        if new_tier is not None:
+            values["tier"] = new_tier
+        await self._session.execute(
+            update(Memory).where(Memory.id == memory_id).values(**values)
+        )
+
+    async def hard_delete(self, memory_id: int) -> None:
+        """Delete a memory row (worker only, after decay cutoff)."""
+        await self._session.execute(
+            text("DELETE FROM memories WHERE id = :id"), {"id": memory_id}
+        )
+
+    async def list_for_consolidation(
+        self, org_id: int, *, limit: int = 500
+    ) -> list[Memory]:
+        """Mid-tier candidates for nightly clustering."""
+        stmt = (
+            self.tenant_query()
+            .where(Memory.org_id == org_id)
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.pinned.is_(False))
+            .where(Memory.tier == "mid")
+            .where(Memory.embedding.is_not(None))
+            .order_by(Memory.id)
+            .limit(limit)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
 
     # ---- hybrid search ----
 

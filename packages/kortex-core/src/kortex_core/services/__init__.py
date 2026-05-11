@@ -1,7 +1,18 @@
 """Use-case orchestration services."""
 
 from kortex_core.services.access_control import AccessControl, AccessDeniedError
+from kortex_core.services.agentic_retriever import (
+    AgenticRetriever,
+    Citation,
+    ContextBundle,
+    RecallRequest,
+)
 from kortex_core.services.api_key_service import ApiKeyService, MintedApiKey
+from kortex_core.services.attachment_service import (
+    AttachmentError,
+    AttachmentService,
+    PresignResult,
+)
 from kortex_core.services.auth_service import (
     AuthError,
     AuthService,
@@ -31,9 +42,14 @@ from kortex_core.services.workspace_service import WorkspaceService
 __all__ = [
     "AccessControl",
     "AccessDeniedError",
+    "AgenticRetriever",
     "ApiKeyService",
+    "AttachmentError",
+    "AttachmentService",
     "AuthError",
     "AuthService",
+    "Citation",
+    "ContextBundle",
     "ConversationService",
     "CreateMemoryInput",
     "IngestMessage",
@@ -43,8 +59,10 @@ __all__ = [
     "MemoryService",
     "MintedApiKey",
     "OrgService",
+    "PresignResult",
     "PrincipalLoad",
     "ProjectService",
+    "RecallRequest",
     "RetrievalService",
     "SearchRequest",
     "SearchResult",

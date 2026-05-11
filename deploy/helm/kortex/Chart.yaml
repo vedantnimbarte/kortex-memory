@@ -1,0 +1,13 @@
+apiVersion: v2
+name: kortex
+description: Kortex memory layer (api, mcp, worker, beat).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - mcp
+  - llm
+  - memory
+home: https://github.com/anthropic/kortex-memory
+maintainers:
+  - name: Kortex Memory

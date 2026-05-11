@@ -1,0 +1,50 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: kortex-api,    dockerfile: docker/api.Dockerfile }
+          - { image: kortex-mcp,    dockerfile: docker/mcp.Dockerfile }
+          - { image: kortex-worker, dockerfile: docker/worker.Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          REPO=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF##*/v}"
+            echo "tags=${REPO}:${VERSION},${REPO}:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${REPO}:main,${REPO}:${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

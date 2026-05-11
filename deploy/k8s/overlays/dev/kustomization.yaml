@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kortex-dev
+
+resources:
+  - ../../base
+
+helmCharts:
+  - name: kortex
+    releaseName: kortex
+    namespace: kortex-dev
+    path: ../../../helm/kortex
+    valuesInline:
+      env: development
+      api:
+        replicas: 1
+        hpa:
+          enabled: false
+        ingress:
+          enabled: false
+      mcp:
+        replicas: 1
+        hpa:
+          enabled: false
+      worker:
+        replicas: 1
+        hpa:
+          enabled: false
+      backup:
+        enabled: false
+      networkPolicy:
+        enabled: false

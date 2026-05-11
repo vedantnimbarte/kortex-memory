@@ -6,12 +6,15 @@ import typer
 
 from kortex_cli.cmds import (
     admin,
+    attachment,
     auth,
+    export,
     ingest,
     key,
     memory,
     org,
     project,
+    recall,
     search,
     session,
     user,
@@ -31,8 +34,11 @@ app.add_typer(user.app, name="user")
 app.add_typer(key.app, name="key")
 app.add_typer(session.app, name="session")
 app.add_typer(memory.app, name="memory")
+app.add_typer(attachment.app, name="attachment")
 app.add_typer(search.app, name="search")
+app.add_typer(recall.app, name="recall")
 app.add_typer(ingest.app, name="ingest")
+app.add_typer(export.app, name="export")
 app.add_typer(admin.app, name="admin")
 
 

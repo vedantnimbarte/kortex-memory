@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kortex.fullname" . }}-beat
+  labels:
+    {{- include "kortex.labels" . | nindent 4 }}
+    app.kubernetes.io/component: beat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kortex.matchLabels" . | nindent 6 }}
+      app.kubernetes.io/component: beat
+  template:
+    metadata:
+      labels:
+        {{- include "kortex.matchLabels" . | nindent 8 }}
+        app.kubernetes.io/component: beat
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: beat
+          image: {{ include "kortex.image" (dict "Values" .Values "repo" .Values.image.worker.repository "tag" .Values.image.worker.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["kortex-worker", "beat"]
+          env:
+            {{- include "kortex.envCommon" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.beat.resources | nindent 12 }}

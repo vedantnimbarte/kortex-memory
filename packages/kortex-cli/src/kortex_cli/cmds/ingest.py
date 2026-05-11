@@ -76,3 +76,66 @@ def ingest_document(
             fail(str(e))
             return
     print_obj(result, json_output=json_output)
+
+
+@app.command("git-log")
+def ingest_git_log(
+    repo: Annotated[Path, typer.Argument(help="Path to a git repository")],
+    scope_type: Annotated[str, typer.Option()] = "project",
+    scope_id: Annotated[int, typer.Option()] = 0,
+    limit: Annotated[int, typer.Option(help="Max commits to ingest")] = 200,
+    sensitivity: Annotated[str, typer.Option()] = "internal",
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Parse ``git log`` output and post each commit as an EVENT memory."""
+    import subprocess
+
+    if not (repo / ".git").exists():
+        fail(f"not a git repo: {repo}")
+        return
+    try:
+        out = subprocess.check_output(  # noqa: S603
+            [
+                "git",
+                "-C",
+                str(repo),
+                "log",
+                f"-n{limit}",
+                "--pretty=format:%H%x1f%an%x1f%aI%x1f%B%x1e",
+            ]
+        )
+    except subprocess.CalledProcessError as e:
+        fail(f"git log failed: {e}")
+        return
+
+    commits: list[dict] = []
+    for record in out.decode("utf-8", errors="replace").split("\x1e"):
+        record = record.strip()
+        if not record:
+            continue
+        parts = record.split("\x1f", 3)
+        if len(parts) < 4:
+            continue
+        sha, author, date, message = parts
+        commits.append(
+            {
+                "sha": sha,
+                "author": author,
+                "date": date,
+                "message": message.strip(),
+            }
+        )
+
+    payload = {
+        "scope_type": scope_type,
+        "scope_id": scope_id,
+        "sensitivity": sensitivity,
+        "commits": commits,
+    }
+    with ApiClient() as client:
+        try:
+            result = client.post("/v1/ingest/git-log", json=payload)
+        except CliApiError as e:
+            fail(str(e))
+            return
+    print_obj(result, json_output=json_output)

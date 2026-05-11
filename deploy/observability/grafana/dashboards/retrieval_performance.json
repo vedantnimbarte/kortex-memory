@@ -1,0 +1,44 @@
+{
+  "title": "Kortex — Retrieval Performance",
+  "uid": "kortex-retrieval",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["kortex", "retrieval"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Recall p50/p95/p99",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"recall\"}[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"recall\"}[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"recall\"}[5m])) by (le))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Phase breakdown (plan / execute / rerank / synthesize)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"plan\"}[5m])) by (le))", "legendFormat": "plan p95" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"execute\"}[5m])) by (le))", "legendFormat": "execute p95" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"rerank\"}[5m])) by (le))", "legendFormat": "rerank p95" },
+        { "expr": "histogram_quantile(0.95, sum(rate(kortex_retrieval_latency_seconds_bucket{phase=\"synthesize\"}[5m])) by (le))", "legendFormat": "synthesize p95" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Avg agent hops",
+      "targets": [{ "expr": "avg(rate(kortex_agent_hops_sum[5m]) / rate(kortex_agent_hops_count[5m]))" }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Candidates per phase",
+      "targets": [
+        { "expr": "sum by (phase) (rate(kortex_retrieval_candidates[5m]))", "legendFormat": "{{phase}}" }
+      ]
+    }
+  ]
+}
