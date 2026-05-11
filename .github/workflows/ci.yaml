@@ -18,6 +18,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            packages/*/pyproject.toml
       - run: uv sync --all-packages --dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -30,6 +33,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            packages/*/pyproject.toml
       - run: uv sync --all-packages --dev
       - run: uv run mypy packages
 
@@ -40,6 +46,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            packages/*/pyproject.toml
       - run: uv sync --all-packages --dev
       - run: uv run pytest -m unit
 
@@ -76,6 +85,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            packages/*/pyproject.toml
       - run: uv sync --all-packages --dev
       - run: uv run alembic upgrade head
       - run: uv run pytest -m integration

@@ -27,6 +27,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # We don't require uv.lock for builds — pyproject.toml is enough.
+          cache-dependency-glob: |
+            pyproject.toml
+            packages/*/pyproject.toml
 
       - name: Build
         working-directory: packages/${{ matrix.package }}
