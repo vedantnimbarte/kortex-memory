@@ -5,10 +5,9 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
-from pydantic import Field
-
 from kortex_core.db.types import ScopeType, Sensitivity
 from kortex_core.services.ingestion_service import IngestionService, IngestMessage
+from pydantic import Field
 
 from kortex_api.deps import PrincipalDep, SessionDep
 from kortex_api.errors import not_found
@@ -20,26 +19,26 @@ router = APIRouter(prefix="/v1/ingest", tags=["ingest"])
 
 class GitCommitIn(APIModel):
     sha: str = Field(min_length=4, max_length=64)
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=20_000)
     author: str | None = None
     date: str | None = None
-    files: list[str] | None = None
+    files: list[str] | None = Field(default=None, max_length=1_000)
 
 
 class GitLogIngestIn(APIModel):
     scope_type: ScopeType
     scope_id: int
     sensitivity: Sensitivity = Sensitivity.INTERNAL
-    commits: list[GitCommitIn]
+    # Cap the batch: each commit becomes a memory + an embedding call, so an
+    # uncapped list is a cost/DoS amplifier from a single request.
+    commits: list[GitCommitIn] = Field(max_length=1_000)
 
 
 class GitLogIngestOut(APIModel):
     memories_created: int
 
 
-@router.post(
-    "/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED
-)
+@router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_messages(
     session_id: uuid.UUID,
     payload: IngestMessagesIn,
@@ -57,9 +56,7 @@ async def ingest_messages(
         )
         for m in payload.messages
     ]
-    summary = await svc.ingest_messages(
-        session_public_id=session_id, items=items
-    )
+    summary = await svc.ingest_messages(session_public_id=session_id, items=items)
     if summary is None:
         raise not_found("session not found")
     await session.commit()

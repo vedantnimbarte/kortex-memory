@@ -14,13 +14,12 @@ import hashlib
 import re
 from collections.abc import Awaitable, Callable
 
+from kortex_core.db.session import session_scope
+from kortex_core.telemetry.logging import get_logger
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-
-from kortex_core.db.session import session_scope
-from kortex_core.telemetry.logging import get_logger
 
 log = get_logger("kortex.api.etag")
 
@@ -73,7 +72,7 @@ async def _current_etag_for_memory(public_id: str) -> str | None:
                     {"pid": public_id},
                 )
             ).first()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("etag_lookup_failed", error=str(e))
         return None
     if not row:

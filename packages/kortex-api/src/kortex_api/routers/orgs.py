@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
-
 from kortex_core.services.org_service import OrgService
 
 from kortex_api.deps import PrincipalDep, SessionDep
@@ -16,9 +15,7 @@ router = APIRouter(prefix="/v1/orgs", tags=["orgs"])
 
 
 @router.post("", response_model=OrgOut, status_code=status.HTTP_201_CREATED)
-async def create_org(
-    payload: OrgIn, principal: PrincipalDep, session: SessionDep
-) -> OrgOut:
+async def create_org(payload: OrgIn, principal: PrincipalDep, session: SessionDep) -> OrgOut:
     if not principal.is_superuser:
         raise forbidden("only superusers may create orgs")
     svc = OrgService(session, principal)
@@ -35,9 +32,7 @@ async def list_orgs(principal: PrincipalDep, session: SessionDep) -> list[OrgOut
 
 
 @router.get("/{public_id}", response_model=OrgOut)
-async def get_org(
-    public_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
-) -> OrgOut:
+async def get_org(public_id: uuid.UUID, principal: PrincipalDep, session: SessionDep) -> OrgOut:
     svc = OrgService(session, principal)
     org = await svc.get(public_id)
     if org is None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, UploadFile, status
 from fastapi.responses import Response
-
 from kortex_core.db.types import ScopeType
 from kortex_core.services.export_service import ExportService
 

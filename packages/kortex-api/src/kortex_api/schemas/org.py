@@ -14,6 +14,9 @@ class OrgIn(APIModel):
 
 
 class OrgOut(TimestampedOut):
+    # Internal scope id: scoped ops (search, memory, ingest) key on it, and it's
+    # already exposed via MemoryOut.scope_id / whoami.org_id.
+    id: int
     slug: str
     name: str
     plan: str
@@ -25,6 +28,7 @@ class WorkspaceIn(APIModel):
 
 
 class WorkspaceOut(TimestampedOut):
+    id: int
     slug: str
     name: str
 
@@ -35,5 +39,6 @@ class ProjectIn(APIModel):
 
 
 class ProjectOut(TimestampedOut):
+    id: int
     slug: str
     name: str

@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
-
 from kortex_core.services.api_key_service import ApiKeyService
 
 from kortex_api.deps import PrincipalDep, SessionDep
@@ -33,9 +32,7 @@ async def mint_api_key(
 
 
 @router.get("", response_model=list[ApiKeyOut])
-async def list_api_keys(
-    principal: PrincipalDep, session: SessionDep
-) -> list[ApiKeyOut]:
+async def list_api_keys(principal: PrincipalDep, session: SessionDep) -> list[ApiKeyOut]:
     svc = ApiKeyService(session, principal)
     keys = await svc.list_()
     return [ApiKeyOut.model_validate(k) for k in keys]

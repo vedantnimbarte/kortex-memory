@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uvicorn
-
 from kortex_core.settings import get_settings
 
 

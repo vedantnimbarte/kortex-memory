@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
-
 from kortex_core.services.workspace_service import WorkspaceService
 
 from kortex_api.deps import PrincipalDep, SessionDep
@@ -26,9 +25,7 @@ async def create_workspace(
 
 
 @router.get("", response_model=list[WorkspaceOut])
-async def list_workspaces(
-    principal: PrincipalDep, session: SessionDep
-) -> list[WorkspaceOut]:
+async def list_workspaces(principal: PrincipalDep, session: SessionDep) -> list[WorkspaceOut]:
     svc = WorkspaceService(session, principal)
     items = await svc.list_()
     return [WorkspaceOut.model_validate(w) for w in items]

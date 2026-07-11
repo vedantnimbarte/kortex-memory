@@ -6,11 +6,10 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Header, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from kortex_core.db.session import get_session
 from kortex_core.security.principal import Principal
 from kortex_core.services.auth_service import AuthError, AuthService
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from kortex_api.errors import unauthorized
 
@@ -30,9 +29,7 @@ async def authenticated_principal(
     auth = AuthService(session)
 
     api_key = x_api_key
-    if api_key is None and authorization and authorization.lower().startswith(
-        "bearer kx_"
-    ):
+    if api_key is None and authorization and authorization.lower().startswith("bearer kx_"):
         api_key = authorization.split(" ", 1)[1]
     if api_key:
         try:

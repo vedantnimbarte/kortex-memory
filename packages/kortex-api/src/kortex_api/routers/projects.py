@@ -5,16 +5,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
-
 from kortex_core.services.project_service import ProjectService
 
 from kortex_api.deps import PrincipalDep, SessionDep
 from kortex_api.errors import not_found
 from kortex_api.schemas.org import ProjectIn, ProjectOut
 
-router = APIRouter(
-    prefix="/v1/workspaces/{workspace_public_id}/projects", tags=["projects"]
-)
+router = APIRouter(prefix="/v1/workspaces/{workspace_public_id}/projects", tags=["projects"])
 
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
