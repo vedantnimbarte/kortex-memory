@@ -33,7 +33,7 @@ class ApiClient:
             timeout=30.0,
         )
 
-    def __enter__(self) -> "ApiClient":
+    def __enter__(self) -> ApiClient:
         return self
 
     def __exit__(self, *exc: object) -> None:

@@ -75,9 +75,7 @@ def create(
 
 
 @app.command("show")
-def show(
-    public_id: str, json_output: Annotated[bool, typer.Option("--json")] = False
-) -> None:
+def show(public_id: str, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     with ApiClient() as client:
         try:
             result = client.get(f"/v1/memories/{public_id}")

@@ -94,7 +94,7 @@ def ingest_git_log(
         fail(f"not a git repo: {repo}")
         return
     try:
-        out = subprocess.check_output(  # noqa: S603
+        out = subprocess.check_output(
             [
                 "git",
                 "-C",

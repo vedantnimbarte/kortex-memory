@@ -9,7 +9,9 @@ import typer
 from kortex_cli.client import ApiClient, CliApiError
 from kortex_cli.output import fail, print_obj
 
-app = typer.Typer(help="Hybrid search across memories.", no_args_is_help=True, invoke_without_command=False)
+app = typer.Typer(
+    help="Hybrid search across memories.", no_args_is_help=True, invoke_without_command=False
+)
 
 
 def _do_search(
