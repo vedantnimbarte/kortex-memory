@@ -40,10 +40,7 @@ class Consolidator(Protocol):
     name: str
 
     @abstractmethod
-    async def consolidate(
-        self, cluster: list[ClusterMember]
-    ) -> ConsolidationResult | None:
-        ...
+    async def consolidate(self, cluster: list[ClusterMember]) -> ConsolidationResult | None: ...
 
 
 _SYSTEM = (
@@ -60,17 +57,13 @@ class LLMConsolidator(Consolidator):
     def __init__(self, llm: LLM | None = None):
         self._llm = llm
 
-    async def consolidate(
-        self, cluster: list[ClusterMember]
-    ) -> ConsolidationResult | None:
+    async def consolidate(self, cluster: list[ClusterMember]) -> ConsolidationResult | None:
         if not cluster:
             return None
         s = get_settings()
         llm = self._llm or get_llm(s.llm_provider)
 
-        rendered = "\n\n---\n\n".join(
-            f"{m.title}\n{m.body}" for m in cluster
-        )
+        rendered = "\n\n---\n\n".join(f"{m.title}\n{m.body}" for m in cluster)
 
         schema = {
             "type": "object",

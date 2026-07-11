@@ -19,9 +19,7 @@ def _import_anthropic() -> Any:
     try:
         import anthropic
     except ImportError as e:  # pragma: no cover - optional dep
-        raise LlmError(
-            "anthropic SDK not installed; install kortex-core[llm-anthropic]"
-        ) from e
+        raise LlmError("anthropic SDK not installed; install kortex-core[llm-anthropic]") from e
     return anthropic
 
 
@@ -70,7 +68,7 @@ class AnthropicLLM(LLM):
                     tools=[tool],
                     tool_choice={"type": "tool", "name": "respond"},
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise LlmError(f"anthropic call failed: {e}") from e
 
             structured: dict[str, Any] | None = None
@@ -79,9 +77,7 @@ class AnthropicLLM(LLM):
                 btype = getattr(block, "type", None)
                 if btype == "tool_use" and getattr(block, "name", "") == "respond":
                     raw = getattr(block, "input", None)
-                    structured = (
-                        raw if isinstance(raw, dict) else json.loads(raw or "{}")
-                    )
+                    structured = raw if isinstance(raw, dict) else json.loads(raw or "{}")
                 elif btype == "text":
                     text_chunks.append(getattr(block, "text", ""))
             return LlmResponse(
@@ -100,7 +96,7 @@ class AnthropicLLM(LLM):
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise LlmError(f"anthropic call failed: {e}") from e
 
         text = "".join(

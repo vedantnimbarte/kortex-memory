@@ -83,13 +83,9 @@ class Attachment(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         default=AttachmentStatus.PENDING.value,
     )
     processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    processed_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    processed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    metadata_: Mapped[dict] = mapped_column(
-        "metadata", JSONB, nullable=False, default=dict
-    )
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     chunks: Mapped[list[AttachmentChunk]] = relationship(
         back_populates="attachment",

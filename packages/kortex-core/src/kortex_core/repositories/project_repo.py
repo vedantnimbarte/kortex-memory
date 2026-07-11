@@ -14,9 +14,7 @@ class ProjectRepository(BaseRepository[Project]):
     async def list_for_workspace(self, workspace_id: int) -> list[Project]:
         stmt = (
             self.tenant_query()
-            .where(
-                Project.workspace_id == workspace_id, Project.deleted_at.is_(None)
-            )
+            .where(Project.workspace_id == workspace_id, Project.deleted_at.is_(None))
             .order_by(Project.id)
         )
         return list((await self._session.execute(stmt)).scalars().all())
@@ -28,9 +26,7 @@ class ProjectRepository(BaseRepository[Project]):
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def get_by_id(self, project_id: int) -> Project | None:
-        stmt = self.tenant_query().where(
-            Project.id == project_id, Project.deleted_at.is_(None)
-        )
+        stmt = self.tenant_query().where(Project.id == project_id, Project.deleted_at.is_(None))
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def get_by_slug(self, workspace_id: int, slug: str) -> Project | None:

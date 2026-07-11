@@ -12,7 +12,7 @@ from sqlalchemy import text, update
 from kortex_core.db.types import AttachmentStatus, ScopeType, Sensitivity
 from kortex_core.models.attachment import Attachment, AttachmentChunk
 from kortex_core.repositories.base import BaseRepository
-from kortex_core.repositories.memory_repo import ScopeFilter
+from kortex_core.repositories.memory_repo import ScopeFilter, _sensitivities_up_to
 from kortex_core.retrieval.hybrid import rrf_fuse
 from kortex_core.settings import get_settings
 
@@ -86,6 +86,7 @@ class AttachmentRepository(BaseRepository[Attachment]):
         status: AttachmentStatus | None = None,
         limit: int = 50,
         offset: int = 0,
+        max_sensitivity: Sensitivity | None = None,
     ) -> list[Attachment]:
         stmt = self.tenant_query().where(Attachment.deleted_at.is_(None))
         if scope:
@@ -95,6 +96,8 @@ class AttachmentRepository(BaseRepository[Attachment]):
             )
         if status:
             stmt = stmt.where(Attachment.processing_status == status.value)
+        if max_sensitivity is not None:
+            stmt = stmt.where(Attachment.sensitivity.in_(_sensitivities_up_to(max_sensitivity)))
         stmt = stmt.order_by(Attachment.created_at.desc()).limit(limit).offset(offset)
         return list((await self._session.execute(stmt)).scalars().all())
 
@@ -181,9 +184,7 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
 
     async def delete_for_attachment(self, attachment_id: int) -> None:
         await self._session.execute(
-            text(
-                "DELETE FROM attachment_chunks WHERE attachment_id = :aid"
-            ),
+            text("DELETE FROM attachment_chunks WHERE attachment_id = :aid"),
             {"aid": attachment_id},
         )
 
@@ -212,12 +213,8 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
 
         scope_filter_sql = ""
         if scopes:
-            placeholders = ", ".join(
-                f"(:st_{i}, :sid_{i})" for i in range(len(scopes))
-            )
-            scope_filter_sql = (
-                f"AND (a.scope_type, a.scope_id) IN ({placeholders})"
-            )
+            placeholders = ", ".join(f"(:st_{i}, :sid_{i})" for i in range(len(scopes)))
+            scope_filter_sql = f"AND (a.scope_type, a.scope_id) IN ({placeholders})"
             for i, sf in enumerate(scopes):
                 params[f"st_{i}"] = sf.scope_type.value
                 params[f"sid_{i}"] = sf.scope_id
@@ -229,12 +226,8 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
             Sensitivity.SECRET.value: 4,
         }
         max_rank = sensitivity_rank[max_sensitivity.value]
-        sens_allowed = [
-            v for v, r in sensitivity_rank.items() if r <= max_rank
-        ]
-        sens_placeholders = ", ".join(
-            f":sens_{i}" for i in range(len(sens_allowed))
-        )
+        sens_allowed = [v for v, r in sensitivity_rank.items() if r <= max_rank]
+        sens_placeholders = ", ".join(f":sens_{i}" for i in range(len(sens_allowed)))
         for i, v in enumerate(sens_allowed):
             params[f"sens_{i}"] = v
 
@@ -259,9 +252,7 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
                 """
             )
             rows = (
-                await self._session.execute(
-                    v_sql, {**params, "qv": str(query_vector), "k_v": kv}
-                )
+                await self._session.execute(v_sql, {**params, "qv": str(query_vector), "k_v": kv})
             ).all()
             vector_ids = [int(r[0]) for r in rows]
 
@@ -280,9 +271,7 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
             LIMIT :k_b
             """
         )
-        bm25_rows = (
-            await self._session.execute(b_sql, {**params, "q": query, "k_b": kb})
-        ).all()
+        bm25_rows = (await self._session.execute(b_sql, {**params, "q": query, "k_b": kb})).all()
         bm25_ids = [int(r[0]) for r in bm25_rows]
 
         if not vector_ids and not bm25_ids:
@@ -305,9 +294,7 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
             WHERE c.id = ANY(:ids)
             """
         )
-        rows = (
-            await self._session.execute(rows_q, {"ids": keep_ids})
-        ).all()
+        rows = (await self._session.execute(rows_q, {"ids": keep_ids})).all()
         by_id = {int(r[0]): r for r in rows}
 
         hits: list[AttachmentChunkHit] = []

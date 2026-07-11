@@ -5,8 +5,6 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import select
-
 from kortex_core.db.types import AgentKind, MessageRole
 from kortex_core.models.session import Conversation, Message, Session
 from kortex_core.repositories.base import BaseRepository
@@ -61,9 +59,7 @@ class SessionRepository(BaseRepository[Session]):
 class ConversationRepository(BaseRepository[Conversation]):
     model = Conversation
 
-    async def create(
-        self, *, session_id: int, title: str = ""
-    ) -> Conversation:
+    async def create(self, *, session_id: int, title: str = "") -> Conversation:
         convo = Conversation(
             org_id=self.principal.org_id,
             session_id=session_id,
@@ -82,7 +78,7 @@ class ConversationRepository(BaseRepository[Conversation]):
         )
         existing = (await self._session.execute(stmt)).scalar_one_or_none()
         if existing is not None:
-            return existing
+            return existing  # type: ignore[no-any-return]
         return await self.create(session_id=session_id)
 
     async def get_by_public_id(self, public_id: uuid.UUID) -> Conversation | None:

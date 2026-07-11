@@ -41,21 +41,13 @@ class ApiKey(Base, PublicIdMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     scope_type: Mapped[str | None] = mapped_column(scope_type_enum, nullable=True)
     scope_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    scopes: Mapped[list[str]] = mapped_column(
-        ARRAY(String(64)), nullable=False, default=list
-    )
+    scopes: Mapped[list[str]] = mapped_column(ARRAY(String(64)), nullable=False, default=list)
     created_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    expires_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_used_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    revoked_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     org: Mapped[Org] = relationship(back_populates="api_keys")
 
@@ -70,6 +62,4 @@ class JwtRevocation(Base):
     expires_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -51,7 +51,7 @@ class AgentLoop:
         self,
         session: AsyncSession,
         principal: Principal,
-        embedder: "Embedder | None" = None,
+        embedder: Embedder | None = None,
         scopes: list[ScopeFilter] | None = None,
     ):
         self._session = session
@@ -84,26 +84,19 @@ class AgentLoop:
 
             with span("kortex.retrieval.execute_step", step_type=step.type) as ss:
                 if isinstance(step, StopAndAnswer):
-                    stopped_reason = (
-                        f"stop:{step.reason}" if step.reason else "stop"
-                    )
+                    stopped_reason = f"stop:{step.reason}" if step.reason else "stop"
                     trace.append("stop_and_answer")
                     break
 
                 if isinstance(step, TimeFilter):
                     time_after = step.after
                     time_before = step.before
-                    trace.append(
-                        f"time_filter after={time_after} before={time_before}"
-                    )
+                    trace.append(f"time_filter after={time_after} before={time_before}")
                     continue
 
                 if isinstance(step, SemanticSearch | KeywordSearch):
                     vector = None
-                    if (
-                        isinstance(step, SemanticSearch)
-                        and self._embedder is not None
-                    ):
+                    if isinstance(step, SemanticSearch) and self._embedder is not None:
                         vectors = await self._embedder.embed([step.query])
                         vector = vectors[0]
                     hits = await self._memories.hybrid_search(
@@ -116,9 +109,7 @@ class AgentLoop:
                     added = _ingest(seen, hits, time_after, time_before)
                     ss.set_attribute("added", added)
                     ss.set_attribute("top_k", step.top_k)
-                    trace.append(
-                        f"{step.type} q={step.query!r} top_k={step.top_k} added={added}"
-                    )
+                    trace.append(f"{step.type} q={step.query!r} top_k={step.top_k} added={added}")
                     continue
 
                 if isinstance(step, LinkExpand):
@@ -126,9 +117,7 @@ class AgentLoop:
                     added = await self._expand_links(seed_ids, step, seen)
                     ss.set_attribute("added", added)
                     ss.set_attribute("depth", step.max_depth)
-                    trace.append(
-                        f"link_expand depth={step.max_depth} added={added}"
-                    )
+                    trace.append(f"link_expand depth={step.max_depth} added={added}")
                     continue
 
         return AgentLoopResult(
@@ -154,11 +143,7 @@ class AgentLoop:
             for mid in frontier:
                 neighbors = await self._links.neighbors(mid, link_types=types)
                 for link in neighbors:
-                    other = (
-                        link.to_memory_id
-                        if link.from_memory_id == mid
-                        else link.from_memory_id
-                    )
+                    other = link.to_memory_id if link.from_memory_id == mid else link.from_memory_id
                     if other in seen:
                         continue
                     memory = await self._memories.get_by_id(other)

@@ -30,9 +30,9 @@ class LinkExpand(BaseModel):
     """Walk ``memory_links`` from already-collected candidates."""
 
     type: Literal["link_expand"] = "link_expand"
-    link_types: list[
-        Literal["related", "derived_from", "supersedes", "contradicts", "part_of"]
-    ] = Field(default_factory=lambda: ["related", "derived_from"])
+    link_types: list[Literal["related", "derived_from", "supersedes", "contradicts", "part_of"]] = (
+        Field(default_factory=lambda: ["related", "derived_from"])  # type: ignore[arg-type]
+    )
     max_depth: int = Field(default=1, ge=1, le=2)
 
 

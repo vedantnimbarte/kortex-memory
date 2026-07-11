@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kortex_core.db.types import ScopeType, Sensitivity
+from kortex_core.db.types import Sensitivity
 from kortex_core.embeddings.protocol import EmbeddingError
 from kortex_core.embeddings.registry import get_embedder
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter

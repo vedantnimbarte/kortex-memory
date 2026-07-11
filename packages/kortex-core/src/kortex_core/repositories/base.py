@@ -65,7 +65,7 @@ class BaseRepository(Generic[ModelT]):
 
     async def add(self, obj: ModelT) -> ModelT:
         if hasattr(obj, "org_id") and not self.principal.is_superuser:
-            self.assert_same_org(obj.org_id)  # type: ignore[attr-defined]
+            self.assert_same_org(obj.org_id)
         self._session.add(obj)
         await self._session.flush()
         return obj

@@ -20,21 +20,15 @@ class UserRepository(BaseRepository[User]):
     model = User
 
     async def get_by_email(self, email: str) -> User | None:
-        stmt = select(User).where(
-            User.email == email, User.deleted_at.is_(None)
-        )
+        stmt = select(User).where(User.email == email, User.deleted_at.is_(None))
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def get_by_id(self, user_id: int) -> User | None:
-        stmt = select(User).where(
-            User.id == user_id, User.deleted_at.is_(None)
-        )
+        stmt = select(User).where(User.id == user_id, User.deleted_at.is_(None))
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def get_by_public_id(self, public_id: uuid.UUID) -> User | None:
-        stmt = select(User).where(
-            User.public_id == public_id, User.deleted_at.is_(None)
-        )
+        stmt = select(User).where(User.public_id == public_id, User.deleted_at.is_(None))
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def create(
@@ -59,4 +53,16 @@ class UserRepository(BaseRepository[User]):
         user = await self.get_by_id(user_id)
         if user is not None:
             user.last_login_at = dt.datetime.now(tz=dt.UTC)
+            await self._session.flush()
+
+    async def set_password(self, user_id: int, password_hash: str) -> None:
+        user = await self.get_by_id(user_id)
+        if user is not None:
+            user.password_hash = password_hash
+            await self._session.flush()
+
+    async def set_email_verified(self, user_id: int, verified: bool = True) -> None:
+        user = await self.get_by_id(user_id)
+        if user is not None:
+            user.email_verified = verified
             await self._session.flush()

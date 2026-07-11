@@ -41,9 +41,7 @@ class Session(Base, PublicIdMixin, TimestampMixin):
     """A logical agent run (one Claude Code session, etc.)."""
 
     __tablename__ = "sessions"
-    __table_args__ = (
-        Index("ix_sessions_org_project", "org_id", "project_id"),
-    )
+    __table_args__ = (Index("ix_sessions_org_project", "org_id", "project_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     org_id: Mapped[int] = mapped_column(
@@ -56,15 +54,9 @@ class Session(Base, PublicIdMixin, TimestampMixin):
         agent_kind_enum, nullable=False, default=AgentKind.OTHER.value
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
-    client_metadata: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, default=dict
-    )
-    started_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    ended_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    client_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     conversations: Mapped[list[Conversation]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
@@ -73,9 +65,7 @@ class Session(Base, PublicIdMixin, TimestampMixin):
 
 class Conversation(Base, PublicIdMixin, TimestampMixin):
     __tablename__ = "conversations"
-    __table_args__ = (
-        Index("ix_conversations_session_id", "session_id"),
-    )
+    __table_args__ = (Index("ix_conversations_session_id", "session_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     org_id: Mapped[int] = mapped_column(
@@ -86,9 +76,7 @@ class Conversation(Base, PublicIdMixin, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    summary_embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(1024), nullable=True
-    )
+    summary_embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
 
     session: Mapped[Session] = relationship(back_populates="conversations")
     messages: Mapped[list[Message]] = relationship(
@@ -100,9 +88,7 @@ class Conversation(Base, PublicIdMixin, TimestampMixin):
 
 class Message(Base, PublicIdMixin):
     __tablename__ = "messages"
-    __table_args__ = (
-        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_messages_conversation_created", "conversation_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     org_id: Mapped[int] = mapped_column(
@@ -117,8 +103,6 @@ class Message(Base, PublicIdMixin):
     tool_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tool_input: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     tool_output: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

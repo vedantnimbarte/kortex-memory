@@ -21,6 +21,7 @@ from kortex_core.db.types import (
     ScopeType,
     Sensitivity,
 )
+from kortex_core.models.memory import Memory
 from kortex_core.repositories.session_repo import (
     ConversationRepository,
     MessageRepository,
@@ -78,9 +79,7 @@ class IngestionService:
                     "created_at": item.created_at,
                 }
             )
-        inserted = await self._messages.append_bulk(
-            conversation_id=convo.id, items=rows
-        )
+        inserted = await self._messages.append_bulk(conversation_id=convo.id, items=rows)
         return IngestSummary(
             session_public_id=session.public_id,
             conversation_public_id=convo.public_id,
@@ -97,7 +96,7 @@ class IngestionService:
         body: str,
         sensitivity: Sensitivity = Sensitivity.INTERNAL,
         source_ref: dict | None = None,
-    ):
+    ) -> Memory:
         """Persist a whole document as a single memory. M4 will replace this
         with chunked attachment ingestion.
         """

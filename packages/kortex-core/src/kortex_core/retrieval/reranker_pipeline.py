@@ -65,5 +65,7 @@ async def rerank_and_pack(
         ]
     )
     kept_idx = {item.id for item in kept_items}
-    final = [reranked[i] for i in sorted(kept_idx, key=lambda i: reranked[i].final_score, reverse=True)]
-    return final, used
+    final = [  # type: ignore[assignment]
+        reranked[i] for i in sorted(kept_idx, key=lambda i: reranked[i].final_score, reverse=True)
+    ]
+    return final, used  # type: ignore[return-value]

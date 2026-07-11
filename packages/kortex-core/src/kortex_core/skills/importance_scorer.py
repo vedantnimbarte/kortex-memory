@@ -28,8 +28,7 @@ class ImportanceScorer(Protocol):
     name: str
 
     @abstractmethod
-    def score(self, inputs: ImportanceInputs) -> float:
-        ...
+    def score(self, inputs: ImportanceInputs) -> float: ...
 
 
 _KIND_BIAS = {

@@ -75,4 +75,4 @@ def configure_logging() -> None:
 
 
 def get_logger(name: str | None = None, **initial_values: Any) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name).bind(**initial_values)
+    return structlog.get_logger(name).bind(**initial_values)  # type: ignore[no-any-return]

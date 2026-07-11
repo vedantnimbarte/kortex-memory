@@ -78,9 +78,7 @@ class ConversationService:
     async def get(self, public_id: uuid.UUID) -> Conversation | None:
         return await self._convos.get_by_public_id(public_id)
 
-    async def list_for_session(
-        self, session_public_id: uuid.UUID
-    ) -> list[Conversation]:
+    async def list_for_session(self, session_public_id: uuid.UUID) -> list[Conversation]:
         session = await self._sessions.get_by_public_id(session_public_id)
         if session is None:
             return []

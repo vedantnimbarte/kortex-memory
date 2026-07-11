@@ -8,11 +8,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kortex_core.db.types import ScopeType
+from kortex_core.db.types import ActorKind, ScopeType
 from kortex_core.models.api_key import ApiKey
 from kortex_core.repositories.api_key_repo import ApiKeyRepository
 from kortex_core.security.api_keys import generate_api_key
 from kortex_core.security.principal import Principal
+from kortex_core.services.access_control import AccessDeniedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +40,15 @@ class ApiKeyService:
         scope_id: int | None = None,
         expires_in_days: int | None = None,
     ) -> MintedApiKey:
+        # A scoped API key must not be able to mint a key broader than itself
+        # (else a read-only key mints an unrestricted one). Users (empty
+        # key_scopes) are unrestricted here; org scoping is enforced downstream.
+        if (
+            self._principal.actor_kind == ActorKind.API_KEY
+            and self._principal.key_scopes
+            and not set(scopes).issubset(self._principal.key_scopes)
+        ):
+            raise AccessDeniedError("cannot mint an api key with broader scopes than the caller")
         material = generate_api_key()
         expires_at = (
             dt.datetime.now(tz=dt.UTC) + dt.timedelta(days=expires_in_days)
@@ -46,9 +56,7 @@ class ApiKeyService:
             else None
         )
         created_by = (
-            self._principal.actor_id
-            if self._principal.actor_kind.value == "user"
-            else None
+            self._principal.actor_id if self._principal.actor_kind.value == "user" else None
         )
         key = await self._repo.create(
             prefix=material.prefix,

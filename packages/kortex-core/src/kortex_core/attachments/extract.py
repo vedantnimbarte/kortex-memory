@@ -41,13 +41,9 @@ def extract_text(body: bytes, *, mime: str | None = None, filename: str = "") ->
 
     if mime == "application/pdf" or name.endswith(".pdf"):
         return _extract_pdf(body)
-    if (
-        mime
-        in {
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        }
-        or name.endswith(".docx")
-    ):
+    if mime in {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    } or name.endswith(".docx"):
         return _extract_docx(body)
     if mime in _MIME_PLAIN or any(
         name.endswith(ext) for ext in (".txt", ".md", ".markdown", ".csv", ".json")
@@ -69,14 +65,12 @@ def _extract_pdf(body: bytes) -> str:
     try:
         import pymupdf  # PyMuPDF >= 1.24 exposes the top-level ``pymupdf`` module.
     except ImportError as e:  # pragma: no cover - optional dep
-        raise ExtractionError(
-            "PyMuPDF not installed; install kortex-core[attachments]"
-        ) from e
+        raise ExtractionError("PyMuPDF not installed; install kortex-core[attachments]") from e
 
     try:
         with pymupdf.open(stream=body, filetype="pdf") as doc:
             return "\n".join(page.get_text() for page in doc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise ExtractionError(f"pdf extraction failed: {e}") from e
 
 
@@ -84,12 +78,10 @@ def _extract_docx(body: bytes) -> str:
     try:
         from docx import Document  # python-docx
     except ImportError as e:  # pragma: no cover - optional dep
-        raise ExtractionError(
-            "python-docx not installed; install kortex-core[attachments]"
-        ) from e
+        raise ExtractionError("python-docx not installed; install kortex-core[attachments]") from e
 
     try:
         doc = Document(io.BytesIO(body))
         return "\n".join(p.text for p in doc.paragraphs)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise ExtractionError(f"docx extraction failed: {e}") from e

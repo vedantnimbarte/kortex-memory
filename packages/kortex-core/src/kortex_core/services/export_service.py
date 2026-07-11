@@ -97,12 +97,8 @@ class ExportService:
         buf = io.BytesIO()
         tar = tarfile.open(fileobj=buf, mode="w")
 
-        memories_repo = MemoryRepository(
-            self._session, principal=self._principal
-        )
-        attachments_repo = AttachmentRepository(
-            self._session, principal=self._principal
-        )
+        memories_repo = MemoryRepository(self._session, principal=self._principal)
+        attachments_repo = AttachmentRepository(self._session, principal=self._principal)
 
         scope = ScopeFilter(scope_type=scope_type, scope_id=scope_id)
 
@@ -178,10 +174,8 @@ class ExportService:
                     }
                 )
                 try:
-                    body = await store.get_bytes(
-                        bucket=a.s3_bucket, key=a.s3_key
-                    )
-                except Exception:  # noqa: BLE001
+                    body = await store.get_bytes(bucket=a.s3_bucket, key=a.s3_key)
+                except Exception:
                     body = b""
                 _add_bytes(tar, f"blobs/{a.public_id}/{a.filename}", body)
 
@@ -241,9 +235,6 @@ class ExportService:
         target_scope_id: int,
     ) -> ImportResult:
         tar = tarfile.open(fileobj=io.BytesIO(body), mode="r")
-        memories_repo = MemoryRepository(
-            self._session, principal=self._principal
-        )
 
         memory_rows = _read_jsonl(tar, "memories.jsonl")
         link_rows = _read_jsonl(tar, "memory_links.jsonl")

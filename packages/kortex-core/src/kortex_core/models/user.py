@@ -32,6 +32,7 @@ class User(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -44,9 +45,7 @@ class User(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
 class Membership(Base, TimestampMixin):
     __tablename__ = "memberships"
     __table_args__ = (
-        UniqueConstraint(
-            "user_id", "scope_type", "scope_id", name="uq_memberships_user_scope"
-        ),
+        UniqueConstraint("user_id", "scope_type", "scope_id", name="uq_memberships_user_scope"),
         Index("ix_memberships_scope", "scope_type", "scope_id"),
         Index("ix_memberships_user_id", "user_id"),
     )

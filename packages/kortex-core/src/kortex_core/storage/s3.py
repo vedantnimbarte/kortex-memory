@@ -25,9 +25,7 @@ def _import_aiobotocore() -> Any:
     try:
         from aiobotocore.session import get_session
     except ImportError as e:  # pragma: no cover - optional dep
-        raise StorageError(
-            "aiobotocore not installed; install kortex-core[storage-s3]"
-        ) from e
+        raise StorageError("aiobotocore not installed; install kortex-core[storage-s3]") from e
     return get_session()
 
 
@@ -43,8 +41,8 @@ class S3BlobStore(BlobStore):
         self._use_ssl = s.s3_use_ssl
         self._session = _import_aiobotocore()
 
-    def _client(self) -> "AioBaseClient":
-        return self._session.create_client(  # type: ignore[no-any-return]
+    def _client(self) -> AioBaseClient:
+        return self._session.create_client(
             "s3",
             endpoint_url=self._endpoint_url,
             region_name=self._region,
@@ -74,9 +72,7 @@ class S3BlobStore(BlobStore):
                 ExpiresIn=expires_in,
                 HttpMethod="PUT",
             )
-        return PresignedUpload(
-            url=url, method="PUT", headers=headers, expires_in=expires_in
-        )
+        return PresignedUpload(url=url, method="PUT", headers=headers, expires_in=expires_in)
 
     async def head(self, *, bucket: str, key: str) -> BlobMetadata | None:
         async with self._client() as client:
@@ -84,7 +80,7 @@ class S3BlobStore(BlobStore):
                 resp = await client.head_object(Bucket=bucket, Key=key)
             except client.exceptions.NoSuchKey:  # pragma: no cover - shape varies
                 return None
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 msg = str(e)
                 if "404" in msg or "Not Found" in msg or "NoSuchKey" in msg:
                     return None
@@ -101,7 +97,7 @@ class S3BlobStore(BlobStore):
         async with self._client() as client:
             try:
                 resp = await client.get_object(Bucket=bucket, Key=key)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise StorageError(f"get failed: {e}") from e
             async with resp["Body"] as stream:
                 return await stream.read()  # type: ignore[no-any-return]
@@ -120,7 +116,7 @@ class S3BlobStore(BlobStore):
                 kw["ContentType"] = content_type
             try:
                 resp = await client.put_object(**kw)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise StorageError(f"put failed: {e}") from e
         return BlobMetadata(
             bucket=bucket,
@@ -136,7 +132,7 @@ class S3BlobStore(BlobStore):
             try:
                 await client.delete_object(Bucket=bucket, Key=key)
                 return True
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 msg = str(e)
                 if "404" in msg or "NoSuchKey" in msg:
                     return False

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 try:  # runtime import; pgvector is required at runtime, optional for type checkers
     from pgvector.sqlalchemy import Vector as _PgVector
 except ImportError:  # pragma: no cover - dev environments without pgvector
-    _PgVector = None  # type: ignore[assignment]
+    _PgVector = None  # type: ignore[assignment,misc]
 
 
 class ScopeType(str, enum.Enum):
@@ -99,7 +99,7 @@ class ActorKind(str, enum.Enum):
 
 
 # 1024-dim vector alias for the default BGE-large embedding dimension.
-def Vector1024() -> "Vector":  # noqa: N802 (factory-style alias)
+def Vector1024() -> Vector:  # noqa: N802 (factory-style alias)
     if _PgVector is None:
         raise RuntimeError("pgvector not installed")
     return _PgVector(1024)

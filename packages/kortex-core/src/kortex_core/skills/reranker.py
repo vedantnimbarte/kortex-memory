@@ -31,10 +31,7 @@ class Reranker(Protocol):
     model_id: str
 
     @abstractmethod
-    async def score(
-        self, query: str, candidates: list[RerankCandidate]
-    ) -> list[float]:
-        ...
+    async def score(self, query: str, candidates: list[RerankCandidate]) -> list[float]: ...
 
 
 class HeuristicReranker(Reranker):
@@ -42,9 +39,7 @@ class HeuristicReranker(Reranker):
 
     model_id = "kortex/heuristic-overlap"
 
-    async def score(
-        self, query: str, candidates: list[RerankCandidate]
-    ) -> list[float]:
+    async def score(self, query: str, candidates: list[RerankCandidate]) -> list[float]:
         q_tokens = {t for t in _tokenize(query) if t}
         out: list[float] = []
         for c in candidates:
@@ -73,29 +68,27 @@ class BgeReranker(Reranker):
 
     def _load(self) -> object:
         if self._model is not None:
-            return self._model
+            return self._model  # type: ignore[unreachable]
         with self._lock:
             if self._model is None:
                 try:
                     from sentence_transformers import CrossEncoder
                 except ImportError as e:  # pragma: no cover - optional dep
                     raise RuntimeError(
-                        "sentence-transformers not installed; "
-                        "install kortex-core[embeddings-local]"
+                        "sentence-transformers not installed; install kortex-core[embeddings-local]"
                     ) from e
                 self._model = CrossEncoder(self.model_id)
         return self._model
 
-    async def score(
-        self, query: str, candidates: list[RerankCandidate]
-    ) -> list[float]:
+    async def score(self, query: str, candidates: list[RerankCandidate]) -> list[float]:
         if not candidates:
             return []
         model = self._load()
         pairs = [(query, c.text) for c in candidates]
         loop = asyncio.get_running_loop()
         scores = await loop.run_in_executor(
-            None, lambda: list(model.predict(pairs))  # type: ignore[attr-defined]
+            None,
+            lambda: list(model.predict(pairs)),  # type: ignore[attr-defined]
         )
         return [float(s) for s in scores]
 
@@ -115,8 +108,8 @@ def get_reranker() -> Reranker:
     try:
         _singleton = BgeReranker()
         # Force lazy load to surface missing deps now, not mid-recall.
-        _singleton._load()  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 — broad fallback by design
+        _singleton._load()
+    except Exception:
         _singleton = HeuristicReranker()
     return _singleton
 

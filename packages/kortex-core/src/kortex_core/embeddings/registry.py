@@ -10,15 +10,15 @@ from kortex_core.settings import get_settings
 if TYPE_CHECKING:
     from kortex_core.embeddings.protocol import Embedder
 
-_factories: dict[str, Callable[[], "Embedder"]] = {}
-_singletons: dict[str, "Embedder"] = {}
+_factories: dict[str, Callable[[], Embedder]] = {}
+_singletons: dict[str, Embedder] = {}
 
 
-def register_embedder(name: str, factory: Callable[[], "Embedder"]) -> None:
+def register_embedder(name: str, factory: Callable[[], Embedder]) -> None:
     _factories[name] = factory
 
 
-def get_embedder(name: str | None = None) -> "Embedder":
+def get_embedder(name: str | None = None) -> Embedder:
     name = name or get_settings().embedder
     if name in _singletons:
         return _singletons[name]
