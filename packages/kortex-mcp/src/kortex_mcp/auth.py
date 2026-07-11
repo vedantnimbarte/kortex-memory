@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import os
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from kortex_core.security.principal import Principal
 from kortex_core.services.auth_service import AuthError, AuthService
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class McpAuthError(Exception):

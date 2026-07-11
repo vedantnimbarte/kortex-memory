@@ -23,9 +23,7 @@ class ProjectService:
         workspace = await self._workspaces.get_by_public_id(workspace_public_id)
         if workspace is None:
             return None
-        return await self._projects.create(
-            workspace_id=workspace.id, slug=slug, name=name
-        )
+        return await self._projects.create(workspace_id=workspace.id, slug=slug, name=name)
 
     async def list_(self, *, workspace_public_id: uuid.UUID) -> list[Project]:
         workspace = await self._workspaces.get_by_public_id(workspace_public_id)

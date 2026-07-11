@@ -5,8 +5,6 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from pydantic import Field
-
 from kortex_core.db.types import (
     MemoryKind,
     MemoryLinkType,
@@ -15,6 +13,7 @@ from kortex_core.db.types import (
     ScopeType,
     Sensitivity,
 )
+from pydantic import Field
 
 from kortex_api.schemas.common import APIModel
 
@@ -22,8 +21,8 @@ from kortex_api.schemas.common import APIModel
 class MemoryIn(APIModel):
     scope_type: ScopeType
     scope_id: int
-    body: str = Field(min_length=1)
-    title: str = ""
+    body: str = Field(min_length=1, max_length=100_000)
+    title: str = Field(default="", max_length=1_000)
     kind: MemoryKind = MemoryKind.FACT
     sensitivity: Sensitivity = Sensitivity.INTERNAL
     source_type: MemorySource = MemorySource.MANUAL
@@ -55,8 +54,8 @@ class MemoryOut(APIModel):
 
 
 class MemoryUpdateIn(APIModel):
-    title: str | None = None
-    body: str | None = None
+    title: str | None = Field(default=None, max_length=1_000)
+    body: str | None = Field(default=None, min_length=1, max_length=100_000)
     kind: MemoryKind | None = None
     sensitivity: Sensitivity | None = None
     importance: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -74,3 +73,10 @@ class MemoryLinkOut(APIModel):
     to_public_id: uuid.UUID
     link_type: MemoryLinkType
     weight: float
+
+
+class LinkedMemoryOut(APIModel):
+    public_id: uuid.UUID
+    title: str
+    tier: MemoryTier
+    link_type: MemoryLinkType

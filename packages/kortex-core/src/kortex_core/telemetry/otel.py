@@ -40,7 +40,9 @@ def configure_otel() -> None:
     )
 
     tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=s.otel_endpoint)))
+    tracer_provider.add_span_processor(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=s.otel_endpoint))
+    )
     trace.set_tracer_provider(tracer_provider)
 
     reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=s.otel_endpoint))
@@ -50,7 +52,7 @@ def configure_otel() -> None:
     _configured = True
 
 
-def get_tracer(name: str = "kortex") -> "Tracer":
+def get_tracer(name: str = "kortex") -> Tracer:
     from opentelemetry import trace
 
     return trace.get_tracer(name)

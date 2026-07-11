@@ -12,6 +12,11 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "python-multipart>=0.0.10",
+    # EmailStr in the user schemas requires the validator backend at schema-build
+    # time; without it create_app() fails to boot.
+    "pydantic[email]>=2.9.0",
+    "prometheus-client>=0.20.0",
+    "stripe>=11.0.0",
     "opentelemetry-instrumentation-fastapi>=0.48b0",
     "opentelemetry-instrumentation-asgi>=0.48b0",
 ]

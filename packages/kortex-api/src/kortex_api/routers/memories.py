@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Query, status
-
 from kortex_core.db.types import MemoryKind, MemoryTier, ScopeType
 from kortex_core.repositories.memory_repo import ScopeFilter
 from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
@@ -13,6 +12,7 @@ from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
 from kortex_api.deps import PrincipalDep, SessionDep
 from kortex_api.errors import not_found
 from kortex_api.schemas.memory import (
+    LinkedMemoryOut,
     MemoryIn,
     MemoryLinkIn,
     MemoryOut,
@@ -68,9 +68,7 @@ async def list_memories(
         if scope_type and scope_id is not None
         else None
     )
-    memories = await svc.list_(
-        scope=scope, tier=tier, kind=kind, limit=limit, offset=offset
-    )
+    memories = await svc.list_(scope=scope, tier=tier, kind=kind, limit=limit, offset=offset)
     return [MemoryOut.model_validate(m) for m in memories]
 
 
@@ -109,9 +107,7 @@ async def update_memory(
 
 
 @router.delete("/{public_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_memory(
-    public_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
-) -> None:
+async def delete_memory(public_id: uuid.UUID, principal: PrincipalDep, session: SessionDep) -> None:
     svc = MemoryService(session, principal)
     ok = await svc.delete(public_id)
     if not ok:
@@ -143,6 +139,22 @@ async def unpin_memory(
     return MemoryOut.model_validate(memory)
 
 
+@router.get("/{public_id}/links", response_model=list[LinkedMemoryOut])
+async def list_memory_links(
+    public_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
+) -> list[LinkedMemoryOut]:
+    svc = MemoryService(session, principal)
+    return [
+        LinkedMemoryOut(
+            public_id=m.public_id,
+            title=m.title,
+            tier=m.tier,
+            link_type=link_type,
+        )
+        for (m, link_type) in await svc.list_links(public_id)
+    ]
+
+
 @router.post("/{public_id}/links", status_code=status.HTTP_204_NO_CONTENT)
 async def link_memories(
     public_id: uuid.UUID,
@@ -162,9 +174,7 @@ async def link_memories(
     await session.commit()
 
 
-@router.delete(
-    "/{public_id}/links/{to_public_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{public_id}/links/{to_public_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def unlink_memories(
     public_id: uuid.UUID,
     to_public_id: uuid.UUID,

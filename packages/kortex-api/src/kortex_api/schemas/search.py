@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pydantic import Field
-
 from kortex_core.db.types import ScopeType
+from pydantic import Field
 
 from kortex_api.schemas.common import APIModel
 

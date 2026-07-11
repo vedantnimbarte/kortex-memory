@@ -20,10 +20,7 @@ class Summarizer(Protocol):
     name: str
 
     @abstractmethod
-    async def summarize(
-        self, messages: list[tuple[str, str]], *, max_words: int = 120
-    ) -> str:
-        ...
+    async def summarize(self, messages: list[tuple[str, str]], *, max_words: int = 120) -> str: ...
 
 
 class LLMSummarizer(Summarizer):
@@ -34,9 +31,7 @@ class LLMSummarizer(Summarizer):
     def __init__(self, llm: LLM | None = None):
         self._llm = llm
 
-    async def summarize(
-        self, messages: list[tuple[str, str]], *, max_words: int = 120
-    ) -> str:
+    async def summarize(self, messages: list[tuple[str, str]], *, max_words: int = 120) -> str:
         if not messages:
             return ""
         s = get_settings()

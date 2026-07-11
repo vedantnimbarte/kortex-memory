@@ -20,8 +20,9 @@ def pg_url() -> Iterator[str]:
     pytest.importorskip("testcontainers.postgres")
     from testcontainers.postgres import PostgresContainer
 
-    container = PostgresContainer("pgvector/pgvector:pg16", username="kortex",
-                                   password="kortex", dbname="kortex")
+    container = PostgresContainer(
+        "pgvector/pgvector:pg16", username="kortex", password="kortex", dbname="kortex"
+    )
     container.start()
     try:
         url = container.get_connection_url().replace(
@@ -35,7 +36,7 @@ def pg_url() -> Iterator[str]:
 @pytest.fixture(scope="session", autouse=True)
 def _alembic_upgrade(pg_url: str, monkeypatch_session: pytest.MonkeyPatch) -> None:
     monkeypatch_session.setenv("KORTEX_DATABASE_URL", pg_url)
-    subprocess.run(["alembic", "upgrade", "head"], check=True)  # noqa: S603,S607
+    subprocess.run(["alembic", "upgrade", "head"], check=True)
 
 
 @pytest.fixture(scope="session")

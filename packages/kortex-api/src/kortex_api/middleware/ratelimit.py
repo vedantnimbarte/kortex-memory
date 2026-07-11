@@ -17,20 +17,20 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 import redis.asyncio as redis_async
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-
 from kortex_core.security.api_keys import parse_api_key
+from kortex_core.security.jwt import JwtError, decode_jwt
 from kortex_core.security.rate_limit import RateLimiter
 from kortex_core.settings import get_settings
 from kortex_core.telemetry.logging import get_logger
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 log = get_logger("kortex.api.ratelimit")
 
 
 def _bucket_for_path_method(path: str, method: str) -> str | None:
-    if path.startswith("/livez") or path.startswith("/readyz") or path == "/metrics":
+    if path.startswith(("/livez", "/readyz")) or path == "/metrics":
         return None
     if path == "/v1/search/recall":
         return "recall"
@@ -51,16 +51,25 @@ def _extract_key_id(request: Request) -> str | None:
         if parsed:
             return f"key:{parsed[0]}"
         return None
-    if authz := request.headers.get("authorization"):
-        # JWT-auth'd user; we don't decode here — the route does. Bucket per IP
-        # instead of leaking the token across the rate-limit key.
+    authz = request.headers.get("authorization") or ""
+    if authz.lower().startswith("bearer "):
+        # JWT-auth'd user. Bucket per user id (cheap HMAC verify, no DB) so that
+        # tenants sharing a load-balancer egress IP don't starve each other's
+        # quota. Fall back to IP only if the token can't be decoded.
+        token = authz.split(" ", 1)[1]
+        try:
+            sub = decode_jwt(token).get("sub")
+            if sub:
+                return f"user:{sub}"
+        except JwtError:
+            pass
         client = request.client.host if request.client else "unknown"
         return f"ip:{client}"
     return None
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, redis_url: str | None = None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, app, redis_url: str | None = None) -> None:
         super().__init__(app)
         self._client: redis_async.Redis | None = None
         self._limiter: RateLimiter | None = None
@@ -72,7 +81,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         try:
             self._client = redis_async.from_url(self._redis_url)
             self._limiter = RateLimiter(self._client)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("ratelimit_redis_unavailable", error=str(e))
             return None
         return self._limiter
@@ -107,7 +116,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 capacity=capacity,
                 window_seconds=60,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("ratelimit_check_failed", error=str(e))
             return await call_next(request)
 

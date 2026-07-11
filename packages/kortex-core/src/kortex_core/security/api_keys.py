@@ -43,7 +43,9 @@ def generate_api_key() -> ApiKeyMaterial:
     secret = _random_token(s.api_key_secret_length)
     plaintext = f"{_KEY_PREFIX}_{prefix}_{secret}"
     secret_hash = _hasher.hash(secret)
-    return ApiKeyMaterial(plaintext=plaintext, prefix=prefix, secret=secret, secret_hash=secret_hash)
+    return ApiKeyMaterial(
+        plaintext=plaintext, prefix=prefix, secret=secret, secret_hash=secret_hash
+    )
 
 
 def parse_api_key(plaintext: str) -> tuple[str, str] | None:

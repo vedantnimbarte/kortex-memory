@@ -35,9 +35,13 @@ def encode_jwt(
     return jwt.encode(payload, s.jwt_secret.get_secret_value(), algorithm=s.jwt_algorithm)
 
 
-def decode_jwt(token: str) -> dict[str, Any]:
+def decode_jwt(token: str, *, expected_type: str | None = None) -> dict[str, Any]:
     s = get_settings()
     try:
-        return jwt.decode(token, s.jwt_secret.get_secret_value(), algorithms=[s.jwt_algorithm])
+        payload = jwt.decode(token, s.jwt_secret.get_secret_value(), algorithms=[s.jwt_algorithm])
     except jwt.PyJWTError as e:
         raise JwtError(str(e)) from e
+    if expected_type is not None and payload.get("type") != expected_type:
+        # Reject e.g. a long-lived refresh token being replayed as an access token.
+        raise JwtError(f"expected {expected_type!r} token, got {payload.get('type')!r}")
+    return payload

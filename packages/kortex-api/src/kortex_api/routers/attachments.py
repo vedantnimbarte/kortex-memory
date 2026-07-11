@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Query, status
-
 from kortex_core.db.types import AttachmentStatus, ScopeType, Sensitivity
 from kortex_core.embeddings.protocol import EmbeddingError
 from kortex_core.embeddings.registry import get_embedder
@@ -19,12 +18,12 @@ from kortex_core.services.attachment_service import (
 from kortex_api.deps import PrincipalDep, SessionDep
 from kortex_api.errors import bad_request, not_found
 from kortex_api.schemas.attachment import (
+    AttachmentChunkHitOut,
     AttachmentFinalizeIn,
     AttachmentOut,
     AttachmentPresignIn,
     AttachmentPresignOut,
     AttachmentSearchOut,
-    AttachmentChunkHitOut,
     PresignedUploadOut,
 )
 from kortex_api.schemas.search import SearchIn
@@ -115,9 +114,7 @@ async def list_attachments(
         if scope_type and scope_id is not None
         else None
     )
-    items = await svc.list_(
-        scope=scope, status=processing_status, limit=limit, offset=offset
-    )
+    items = await svc.list_(scope=scope, status=processing_status, limit=limit, offset=offset)
     return [AttachmentOut.model_validate(a) for a in items]
 
 

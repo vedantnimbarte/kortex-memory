@@ -54,7 +54,7 @@ async def _process_one(attachment_id: int) -> str:
 
         # Bind principal to the attachment's org so the chunk repo writes the
         # correct ``org_id`` and the tenancy check is satisfied.
-        chunks_repo._principal = Principal(  # type: ignore[assignment]
+        chunks_repo._principal = Principal(
             actor_id=0,
             actor_kind=ActorKind.SYSTEM,
             org_id=attachment.org_id,
@@ -62,19 +62,15 @@ async def _process_one(attachment_id: int) -> str:
         )
 
         try:
-            body = await store.get_bytes(
-                bucket=attachment.s3_bucket, key=attachment.s3_key
-            )
+            body = await store.get_bytes(bucket=attachment.s3_bucket, key=attachment.s3_key)
             text = extract_text(body, mime=attachment.mime, filename=attachment.filename)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.error(
                 "attachment_extract_failed",
                 attachment_id=attachment_id,
                 error=str(e),
             )
-            await repo.mark_status(
-                attachment_id, status=AttachmentStatus.FAILED, error=str(e)
-            )
+            await repo.mark_status(attachment_id, status=AttachmentStatus.FAILED, error=str(e))
             return "failed"
 
         if not text.strip():
@@ -118,9 +114,7 @@ async def _process_one(attachment_id: int) -> str:
                     embeddings=vectors,
                     embedding_model=embedder.model_id,
                 )
-                await repo.mark_status(
-                    attachment_id, status=AttachmentStatus.READY
-                )
+                await repo.mark_status(attachment_id, status=AttachmentStatus.READY)
                 log.info(
                     "attachment_ready",
                     attachment_id=attachment_id,
@@ -128,9 +122,7 @@ async def _process_one(attachment_id: int) -> str:
                 )
                 return "ready"
         # No embedder or embedding failed → still record chunks for BM25.
-        await chunks_repo.insert_many(
-            attachment_id=attachment_id, chunks=chunks
-        )
+        await chunks_repo.insert_many(attachment_id=attachment_id, chunks=chunks)
         await repo.mark_status(attachment_id, status=AttachmentStatus.READY)
         log.info(
             "attachment_ready_no_embeddings",

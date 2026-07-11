@@ -17,9 +17,7 @@ def _import_openai() -> Any:
     try:
         import openai
     except ImportError as e:  # pragma: no cover - optional dep
-        raise LlmError(
-            "openai SDK not installed; install kortex-core[llm-openai]"
-        ) from e
+        raise LlmError("openai SDK not installed; install kortex-core[llm-openai]") from e
     return openai
 
 
@@ -58,7 +56,7 @@ class OpenRouterLLM(LLM):
 
         try:
             resp = await self._client.chat.completions.create(**kw)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise LlmError(f"openrouter call failed: {e}") from e
 
         text = resp.choices[0].message.content or ""

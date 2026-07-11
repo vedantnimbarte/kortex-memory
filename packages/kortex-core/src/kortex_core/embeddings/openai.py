@@ -25,7 +25,7 @@ class OpenAIEmbedder(Embedder):
         self.dim = dim
         self._client: AsyncOpenAI | None = None
 
-    def _get_client(self) -> "AsyncOpenAI":
+    def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
             try:
                 from openai import AsyncOpenAI

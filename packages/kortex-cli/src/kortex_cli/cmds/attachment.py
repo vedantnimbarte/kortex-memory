@@ -80,7 +80,7 @@ def upload(
                 if resp.status_code >= 400:
                     fail(f"upload failed: HTTP {resp.status_code} {resp.text}")
                     return
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             fail(f"upload failed: {e}")
             return
 
@@ -135,9 +135,7 @@ def list_attachments(
 
 
 @app.command("show")
-def show(
-    public_id: str, json_output: Annotated[bool, typer.Option("--json")] = False
-) -> None:
+def show(public_id: str, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     with ApiClient() as client:
         try:
             result = client.get(f"/v1/attachments/{public_id}")

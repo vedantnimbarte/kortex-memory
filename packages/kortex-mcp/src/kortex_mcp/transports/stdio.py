@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import logging
 
-from mcp.server.stdio import stdio_server
-
 from kortex_core.db.engine import close_engine
 from kortex_core.db.session import session_scope
+from mcp.server.stdio import stdio_server
 
 from kortex_mcp.auth import principal_from_api_key, read_api_key_from_env
 from kortex_mcp.context import McpRuntime, set_runtime

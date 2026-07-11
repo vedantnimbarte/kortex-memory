@@ -190,9 +190,7 @@ class AgenticRetriever:
                 summarizer = self._summarizer or planner
                 try:
                     with span("kortex.retrieval.synthesize") as syn:
-                        answer = await self._synthesize(
-                            summarizer, request.query, bundle
-                        )
+                        answer = await self._synthesize(summarizer, request.query, bundle)
                         syn.set_attribute("answer_chars", len(answer or ""))
                 except LlmError as e:
                     log.warning("summarizer_failed", error=str(e))
@@ -225,7 +223,8 @@ class AgenticRetriever:
     async def _plan(self, planner: LLM, request: RecallRequest) -> QueryPlan:
         s = get_settings()
         scope_hint = (
-            "\nScopes: " + json.dumps(
+            "\nScopes: "
+            + json.dumps(
                 [{"type": sc.scope_type.value, "id": sc.scope_id} for sc in (request.scopes or [])]
             )
             if request.scopes
@@ -270,9 +269,7 @@ class AgenticRetriever:
         )
         return kept
 
-    async def _synthesize(
-        self, summarizer: LLM, query: str, bundle: list[RerankedHit]
-    ) -> str:
+    async def _synthesize(self, summarizer: LLM, query: str, bundle: list[RerankedHit]) -> str:
         s = get_settings()
         memories_block = "\n\n".join(
             f"[m:{r.hit.public_id}] {r.hit.title}\n{r.hit.body}" for r in bundle
@@ -282,10 +279,7 @@ class AgenticRetriever:
                 LlmMessage(role="system", content=_SUMMARIZER_SYSTEM),
                 LlmMessage(
                     role="user",
-                    content=(
-                        f"Question: {query}\n\nMemories:\n{memories_block}\n\n"
-                        f"Answer:"
-                    ),
+                    content=(f"Question: {query}\n\nMemories:\n{memories_block}\n\nAnswer:"),
                 ),
             ],
             model=s.llm_model_summarizer,
@@ -294,9 +288,7 @@ class AgenticRetriever:
         )
         return resp.text.strip()
 
-    async def _fallback_hybrid(
-        self, request: RecallRequest, max_tokens: int
-    ) -> ContextBundle:
+    async def _fallback_hybrid(self, request: RecallRequest, max_tokens: int) -> ContextBundle:
         max_sens = self._principal.max_sensitivity or Sensitivity.INTERNAL
         try:
             embedder = get_embedder()
@@ -313,17 +305,13 @@ class AgenticRetriever:
             max_sensitivity=max_sens,
             limit=50,
         )
-        kept = await self._rerank_pack(
-            request.query, hits, max_tokens, request.per_item_max
-        )
+        kept = await self._rerank_pack(request.query, hits, max_tokens, request.per_item_max)
         await self._memories.record_access([r.hit.memory_id for r in kept])
         return ContextBundle(
             query=request.query,
             answer=None,
             citations=[
-                Citation(
-                    public_id=r.hit.public_id, title=r.hit.title, score=r.final_score
-                )
+                Citation(public_id=r.hit.public_id, title=r.hit.title, score=r.final_score)
                 for r in kept
             ],
             candidates=kept,

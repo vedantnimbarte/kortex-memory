@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from kortex_core.db.types import ActorKind, Role, ScopeType, Sensitivity
 from kortex_core.repositories.api_key_repo import ApiKeyRepository
 from kortex_core.repositories.membership_repo import MembershipRepository
 from kortex_core.repositories.user_repo import UserRepository
+from kortex_core.security import token_denylist
 from kortex_core.security.api_keys import (
     parse_api_key,
     verify_api_key_secret,
@@ -61,45 +63,89 @@ class AuthService:
         self._users = UserRepository(session)
         self._memberships = MembershipRepository(session)
 
+    # --- token mint (shared by login, refresh, signup) ---
+
+    @staticmethod
+    def issue_tokens(user_id: int, user_public_id: uuid.UUID) -> LoginResult:
+        s = get_settings()
+        access = encode_jwt(
+            subject=str(user_id),
+            extra={"jti": str(uuid.uuid4())},
+            ttl_seconds=s.jwt_access_ttl_seconds,
+            token_type="access",
+        )
+        refresh = encode_jwt(
+            subject=str(user_id),
+            extra={"jti": str(uuid.uuid4())},
+            ttl_seconds=s.jwt_refresh_ttl_seconds,
+            token_type="refresh",
+        )
+        return LoginResult(
+            user_id=user_id,
+            user_public_id=user_public_id,
+            access_token=access,
+            refresh_token=refresh,
+            expires_in=s.jwt_access_ttl_seconds,
+        )
+
     # --- user/password login ---
 
-    async def login_with_password(
-        self, *, email: str, password: str
-    ) -> LoginResult:
+    async def login_with_password(self, *, email: str, password: str) -> LoginResult:
         user = await self._users.get_by_email(email)
         if user is None or user.password_hash is None:
             raise AuthError("invalid credentials")
         if not verify_password(user.password_hash, password):
             raise AuthError("invalid credentials")
         await self._users.touch_login(user.id)
+        return self.issue_tokens(user.id, user.public_id)
 
-        s = get_settings()
-        jti_access = uuid.uuid4()
-        access = encode_jwt(
-            subject=str(user.id),
-            extra={"jti": str(jti_access)},
-            ttl_seconds=s.jwt_access_ttl_seconds,
-            token_type="access",
-        )
-        refresh = encode_jwt(
-            subject=str(user.id),
-            extra={"jti": str(uuid.uuid4())},
-            ttl_seconds=s.jwt_refresh_ttl_seconds,
-            token_type="refresh",
-        )
-        return LoginResult(
-            user_id=user.id,
-            user_public_id=user.public_id,
-            access_token=access,
-            refresh_token=refresh,
-            expires_in=s.jwt_access_ttl_seconds,
-        )
+    async def refresh(self, refresh_token: str) -> LoginResult:
+        """Exchange a valid refresh token for a fresh pair. Rotation: the spent
+        token's jti is revoked, so a refresh token is single-use — a replayed or
+        stolen-then-used token is rejected on its second use."""
+        try:
+            payload = decode_jwt(refresh_token, expected_type="refresh")
+        except JwtError as e:
+            raise AuthError(f"invalid refresh token: {e}") from e
+        jti = payload.get("jti", "")
+        if await token_denylist.is_revoked(jti):
+            raise AuthError("refresh token has been revoked")
+        sub = payload.get("sub")
+        try:
+            user_id = int(sub) if sub else None
+        except (TypeError, ValueError) as e:
+            raise AuthError("token subject not an integer") from e
+        if user_id is None:
+            raise AuthError("token missing subject")
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise AuthError("user not found")
+        await self._revoke_payload(payload)  # rotate: burn the used token
+        return self.issue_tokens(user.id, user.public_id)
+
+    async def revoke_refresh(self, refresh_token: str) -> None:
+        """Revoke a refresh token (logout). Silently succeeds on a bad token —
+        logout should never error on an already-invalid credential."""
+        try:
+            payload = decode_jwt(refresh_token, expected_type="refresh")
+        except JwtError:
+            return
+        await self._revoke_payload(payload)
+
+    @staticmethod
+    async def _revoke_payload(payload: dict) -> None:
+        jti = payload.get("jti", "")
+        exp = payload.get("exp")
+        ttl = get_settings().jwt_refresh_ttl_seconds
+        if isinstance(exp, int | float):
+            ttl = max(1, int(exp - dt.datetime.now(tz=dt.UTC).timestamp()))
+        await token_denylist.revoke(jti, ttl_seconds=ttl)
 
     # --- principal materialization ---
 
     async def principal_from_jwt(self, token: str) -> PrincipalLoad:
         try:
-            payload = decode_jwt(token)
+            payload = decode_jwt(token, expected_type="access")
         except JwtError as e:
             raise AuthError(f"invalid token: {e}") from e
         sub = payload.get("sub")
@@ -159,9 +205,7 @@ class AuthService:
         roles: dict[ScopeRef, Role] = {}
         if key.scope_type and key.scope_id:
             try:
-                roles[ScopeRef(type=ScopeType(key.scope_type), id=key.scope_id)] = (
-                    Role.MEMBER
-                )
+                roles[ScopeRef(type=ScopeType(key.scope_type), id=key.scope_id)] = Role.MEMBER
             except ValueError:  # pragma: no cover
                 pass
         max_sensitivity = self._max_sensitivity(roles.values())

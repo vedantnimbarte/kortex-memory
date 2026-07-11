@@ -30,9 +30,7 @@ def login(
     password = getpass.getpass("password: ")
     client = ApiClient(profile=CliProfile(name=profile, api_url=api_url))
     try:
-        result = client.post(
-            "/v1/auth/login", json={"email": email, "password": password}
-        )
+        result = client.post("/v1/auth/login", json={"email": email, "password": password})
     except CliApiError as e:
         fail(str(e))
         return
@@ -70,6 +68,9 @@ def use(profile: str) -> None:
 def logout() -> None:
     """Forget tokens for the active profile."""
     p = get_profile()
-    update_profile(CliProfile(name=p.name, api_url=p.api_url, api_key=None,
-                              access_token=None, refresh_token=None))
+    update_profile(
+        CliProfile(
+            name=p.name, api_url=p.api_url, api_key=None, access_token=None, refresh_token=None
+        )
+    )
     print_obj({"profile": p.name, "logged_out": True})

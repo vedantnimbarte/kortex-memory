@@ -48,22 +48,18 @@ def build_server() -> Server:
         return [_to_mcp_tool(t) for t in tools.values()]
 
     @server.call_tool()
-    async def _call_tool(
-        name: str, arguments: dict[str, Any] | None
-    ) -> list[TextContent]:
+    async def _call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
         tool = tools.get(name)
         if tool is None:
             raise ValueError(f"unknown tool: {name}")
         try:
             result = await tool.handler(arguments or {})
-        except Exception as e:  # noqa: BLE001 - surface as a tool error
+        except Exception as e:
             logger.exception("kortex_mcp.tool_error name=%s", name)
             return [
                 TextContent(
                     type="text",
-                    text=_serialise(
-                        {"error": type(e).__name__, "message": str(e)}
-                    ),
+                    text=_serialise({"error": type(e).__name__, "message": str(e)}),
                 )
             ]
         return [TextContent(type="text", text=_serialise(result))]

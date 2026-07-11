@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from kortex_core.retrieval.query_plan import (
     KeywordSearch,
     LinkExpand,
@@ -14,6 +12,7 @@ from kortex_core.retrieval.query_plan import (
     parse_plan,
     query_plan_schema,
 )
+from pydantic import ValidationError
 
 
 def test_parse_empty_payload_returns_empty_plan() -> None:

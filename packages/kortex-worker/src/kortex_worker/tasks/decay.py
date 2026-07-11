@@ -2,8 +2,9 @@
 
 Every 6h we fan out one task per org. Each org task scores its non-pinned
 memories with the configured ``DecayPolicy``, writes the new ``decay_score``,
-applies short→mid promotions, hard-deletes short-tier rows past the cutoff,
-and archives mid-tier rows past the cutoff.
+applies short→mid promotions, soft-deletes short-tier rows past the cutoff
+(recoverable — we never permanently destroy a user's memory here), and
+archives mid-tier rows past the cutoff.
 """
 
 from __future__ import annotations
@@ -57,7 +58,10 @@ async def _tick_one_org(org_id: int) -> dict[str, int]:
             )
             scored += 1
             if decision.should_hard_delete:
-                await repo.hard_delete(m.id)
+                # Soft-delete only: sets deleted_at so the row drops out of all
+                # queries but stays recoverable/exportable. Permanently purging
+                # never-recalled memories here silently destroyed user data.
+                await repo.soft_delete(m)
                 deleted += 1
                 continue
             if decision.should_archive:
@@ -69,14 +73,10 @@ async def _tick_one_org(org_id: int) -> dict[str, int]:
                 )
                 archived += 1
                 continue
-            new_tier = (
-                decision.new_tier.value if decision.new_tier is not None else None
-            )
+            new_tier = decision.new_tier.value if decision.new_tier is not None else None
             if new_tier is not None:
                 promoted += 1
-            await repo.apply_decay(
-                m.id, decay_score=decision.new_decay_score, new_tier=new_tier
-            )
+            await repo.apply_decay(m.id, decay_score=decision.new_decay_score, new_tier=new_tier)
     return {
         "org_id": org_id,
         "scored": scored,

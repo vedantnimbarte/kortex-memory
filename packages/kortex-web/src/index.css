@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/* ── Core memory: design tokens ──────────────────────────────────────────
+   Grounded in magnetic-core memory — warm copper/ferrite threads on a cool
+   deep-slate machine chassis. Mono carries the machine-record data. */
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  --color-bg: #0b0e13;
+  --color-surface: #131922;
+  --color-surface-2: #1a212c;
+  --color-line: #28323f;
+  --color-line-bright: #3a4757;
+  --color-ink: #e8ecf2;
+  --color-muted: #8b97a8;
+  --color-faint: #5c6879;
+
+  /* Ferrite copper — the one bold accent. */
+  --color-copper: #d98a3d;
+  --color-copper-bright: #f0a862;
+  --color-copper-dim: #6e4c2a;
+
+  /* Tier warmth: short (cool, volatile) → long (copper, settled into core). */
+  --color-tier-short: #6ba3c4;
+  --color-tier-mid: #c9a36b;
+  --color-tier-long: #d98a3d;
+
+  --color-danger: #d96a6a;
+  --color-ok: #6bc49a;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv05", "ss03";
+}
+
+/* Ambient chassis texture: a faint ferrite-core lattice behind the app. */
+.core-lattice {
+  background-image:
+    radial-gradient(circle at center, transparent 1.5px, transparent 2px),
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 100% 100%, 44px 44px, 44px 44px;
+  background-position: center;
+  opacity: 0.25;
+}
+
+::selection {
+  background: var(--color-copper);
+  color: #1a0e02;
+}
+
+/* Focus ring — copper, always visible for keyboard nav. */
+:focus-visible {
+  outline: 2px solid var(--color-copper);
+  outline-offset: 2px;
+}
+
+/* Thin, unobtrusive scrollbars that match the chassis. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-bright);
+  border-radius: 6px;
+  border: 2px solid var(--color-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

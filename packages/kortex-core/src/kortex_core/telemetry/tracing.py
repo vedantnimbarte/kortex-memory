@@ -31,7 +31,7 @@ def span(name: str, **attrs: Any) -> Iterator[Any]:
         for k, v in attrs.items():
             try:
                 s.set_attribute(k, v)
-            except Exception:  # noqa: BLE001 - never break the caller
+            except Exception:
                 pass
         yield s
 

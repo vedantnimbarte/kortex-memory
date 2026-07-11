@@ -29,7 +29,7 @@ class LocalBgeEmbedder(Embedder):
         self._model: SentenceTransformer | None = None
         self._load_lock = threading.Lock()
 
-    def _load(self) -> "SentenceTransformer":
+    def _load(self) -> SentenceTransformer:
         if self._model is None:
             with self._load_lock:
                 if self._model is None:

@@ -32,9 +32,7 @@ def create(
 ) -> None:
     with ApiClient() as client:
         try:
-            result = client.post(
-                "/v1/orgs", json={"slug": slug, "name": name, "plan": plan}
-            )
+            result = client.post("/v1/orgs", json={"slug": slug, "name": name, "plan": plan})
         except CliApiError as e:
             fail(str(e))
             return

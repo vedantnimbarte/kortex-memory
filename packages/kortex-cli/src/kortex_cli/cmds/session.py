@@ -48,9 +48,7 @@ def show(
 
 
 @app.command("end")
-def end(
-    public_id: str, json_output: Annotated[bool, typer.Option("--json")] = False
-) -> None:
+def end(public_id: str, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     with ApiClient() as client:
         try:
             result = client.post(f"/v1/sessions/{public_id}/end")

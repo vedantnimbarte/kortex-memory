@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from kortex_core.security.api_keys import (
     generate_api_key,
     parse_api_key,
@@ -11,7 +10,6 @@ from kortex_core.security.api_keys import (
 )
 from kortex_core.security.jwt import JwtError, decode_jwt, encode_jwt
 from kortex_core.security.passwords import hash_password, verify_password
-
 
 pytestmark = pytest.mark.unit
 
@@ -51,3 +49,13 @@ def test_jwt_tampered() -> None:
     token = encode_jwt(subject="42")
     with pytest.raises(JwtError):
         decode_jwt(token + "x")
+
+
+def test_jwt_type_enforced() -> None:
+    """A refresh token must not be accepted where an access token is required."""
+    refresh = encode_jwt(subject="42", token_type="refresh")
+    with pytest.raises(JwtError, match="expected 'access'"):
+        decode_jwt(refresh, expected_type="access")
+    # The matching type still decodes.
+    access = encode_jwt(subject="42", token_type="access")
+    assert decode_jwt(access, expected_type="access")["sub"] == "42"

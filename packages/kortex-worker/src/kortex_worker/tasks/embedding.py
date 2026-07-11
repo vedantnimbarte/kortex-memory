@@ -46,10 +46,7 @@ async def _embed_batch() -> int:
         pending = await repo.list_pending_embedding(limit=s.embedder_batch_size)
         if not pending:
             return 0
-        texts = [
-            (m.title + "\n" + m.body).strip() if m.title else m.body
-            for m in pending
-        ]
+        texts = [(m.title + "\n" + m.body).strip() if m.title else m.body for m in pending]
         try:
             vectors = await embedder.embed(texts)
         except EmbeddingError as e:  # pragma: no cover - depends on adapter
@@ -57,9 +54,7 @@ async def _embed_batch() -> int:
             return 0
         for memory, vector in zip(pending, vectors, strict=True):
             await repo.set_embedding(memory.id, vector, embedder.model_id)
-        log.info(
-            "embed_batch_done", count=len(pending), model=embedder.model_id
-        )
+        log.info("embed_batch_done", count=len(pending), model=embedder.model_id)
         return len(pending)
 
 

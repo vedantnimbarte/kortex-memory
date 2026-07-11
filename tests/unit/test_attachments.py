@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from kortex_core.attachments.chunker import chunk_text
 from kortex_core.attachments.extract import extract_text
 from kortex_core.storage.fs import FilesystemBlobStore
@@ -43,7 +42,7 @@ def test_extract_text_plain_passthrough() -> None:
 
 
 def test_extract_text_unknown_mime_falls_back_to_utf8() -> None:
-    body = "free-text content".encode()
+    body = b"free-text content"
     assert "free-text" in extract_text(body, mime=None, filename="notes.txt")
 
 

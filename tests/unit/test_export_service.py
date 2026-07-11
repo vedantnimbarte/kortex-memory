@@ -59,7 +59,9 @@ def test_idempotent_principal_token_shape() -> None:
     from kortex_api.middleware.idempotency import _principal_token
 
     class FakeRequest:
-        headers: dict[str, str] = {"x-api-key": "kx_abcd1234_secretsecretsecretsecretsecretsecretsec"}
+        headers = {  # noqa: RUF012 - test fake, not a real mutable-default concern
+            "x-api-key": "kx_abcd1234_secretsecretsecretsecretsecretsecretsec"
+        }
 
     token = _principal_token(FakeRequest())  # type: ignore[arg-type]
     assert token.startswith("k:")

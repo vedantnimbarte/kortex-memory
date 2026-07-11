@@ -12,7 +12,6 @@ task no-ops with ``status="skipped:no_clusterer"``.
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
 
 from kortex_core.db.engine import close_engine
 from kortex_core.db.session import session_scope
@@ -61,7 +60,7 @@ def _cluster(vectors: list[list[float]]) -> list[int]:
     return [int(label) for label in labels]
 
 
-async def _consolidate_org(org_id: int) -> dict[str, int]:
+async def _consolidate_org(org_id: int) -> dict[str, int | str]:
     async with session_scope() as session:
         repo = MemoryRepository(session, principal=_superuser(org_id))
         links = MemoryLinkRepository(session, principal=_superuser(org_id))
@@ -117,9 +116,7 @@ async def _consolidate_org(org_id: int) -> dict[str, int]:
                 importance=max(anchor.importance, 0.7),
             )
             # New summary lives in the long tier.
-            await repo.apply_decay(
-                summary.id, decay_score=1.0, new_tier=MemoryTier.LONG.value
-            )
+            await repo.apply_decay(summary.id, decay_score=1.0, new_tier=MemoryTier.LONG.value)
             for mid in result.derived_from_ids:
                 await links.link(
                     from_memory_id=summary.id,
@@ -128,26 +125,24 @@ async def _consolidate_org(org_id: int) -> dict[str, int]:
                 )
                 # Dampen members so the summary surfaces in retrieval.
                 source = next(c for c in candidates if c.id == mid)
-                await repo.apply_decay(
-                    source.id, decay_score=source.decay_score * 0.5
-                )
+                await repo.apply_decay(source.id, decay_score=source.decay_score * 0.5)
             summaries += 1
 
     return {"org_id": org_id, "clusters": len(groups), "summaries": summaries}
 
 
-async def _consolidate_all() -> list[dict[str, int]]:
+async def _consolidate_all() -> list[dict[str, int | str]]:
     async with session_scope() as session:
         repo = MemoryRepository(session, principal=_superuser())
         orgs = await repo.list_orgs_with_memories()
-    results: list[dict[str, int]] = []
+    results: list[dict[str, int | str]] = []
     for org_id in orgs:
         results.append(await _consolidate_org(org_id))
     return results
 
 
 @celery_app.task(name="kortex.consolidate.consolidate_tier", bind=False)
-def consolidate_tier() -> list[dict[str, int]]:
+def consolidate_tier() -> list[dict[str, int | str]]:
     try:
         return asyncio.run(_consolidate_all())
     finally:
@@ -158,7 +153,7 @@ def consolidate_tier() -> list[dict[str, int]]:
 
 
 @celery_app.task(name="kortex.consolidate.consolidate_tier_org", bind=False)
-def consolidate_tier_org(org_id: int) -> dict[str, int]:
+def consolidate_tier_org(org_id: int) -> dict[str, int | str]:
     try:
         return asyncio.run(_consolidate_org(int(org_id)))
     finally:

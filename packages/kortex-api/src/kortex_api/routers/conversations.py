@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, status
-
 from kortex_core.services.session_service import ConversationService
 
 from kortex_api.deps import PrincipalDep, SessionDep

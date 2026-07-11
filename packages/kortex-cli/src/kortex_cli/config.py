@@ -58,11 +58,7 @@ def get_profile(name: str | None = None) -> CliProfile:
     name = name or get_active_profile_name(doc)
     profiles = doc.get("profiles", {})
     raw = dict(profiles.get(name, {})) if isinstance(profiles, dict) else {}
-    api_url = (
-        os.environ.get("KORTEX_API_URL")
-        or raw.get("api_url")
-        or "http://localhost:8000"
-    )
+    api_url = os.environ.get("KORTEX_API_URL") or raw.get("api_url") or "http://localhost:8000"
     api_key = os.environ.get("KORTEX_API_KEY") or raw.get("api_key")
     return CliProfile(
         name=name,

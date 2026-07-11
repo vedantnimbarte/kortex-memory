@@ -40,7 +40,7 @@ class MemoryLinkRepository(BaseRepository[MemoryLink]):
         to_memory_id: int,
         link_type: MemoryLinkType,
     ) -> bool:
-        stmt = select(MemoryLink).where(
+        stmt = select(MemoryLink).where(  # tenancy: ok - ids tenant-resolved upstream
             MemoryLink.from_memory_id == from_memory_id,
             MemoryLink.to_memory_id == to_memory_id,
             MemoryLink.link_type == link_type.value,
@@ -58,14 +58,12 @@ class MemoryLinkRepository(BaseRepository[MemoryLink]):
         *,
         link_types: list[MemoryLinkType] | None = None,
     ) -> list[MemoryLink]:
-        stmt = select(MemoryLink).where(
+        stmt = select(MemoryLink).where(  # tenancy: ok - ids tenant-resolved upstream
             or_(
                 MemoryLink.from_memory_id == memory_id,
                 MemoryLink.to_memory_id == memory_id,
             )
         )
         if link_types:
-            stmt = stmt.where(
-                MemoryLink.link_type.in_([lt.value for lt in link_types])
-            )
+            stmt = stmt.where(MemoryLink.link_type.in_([lt.value for lt in link_types]))
         return list((await self._session.execute(stmt)).scalars().all())

@@ -13,6 +13,7 @@ from kortex_core.db.types import (
     MemoryKind,
     MemoryLinkType,
     MemorySource,
+    MemoryTier,
     ScopeType,
     Sensitivity,
 )
@@ -20,7 +21,9 @@ from kortex_core.embeddings.registry import get_embedder
 from kortex_core.models.memory import Memory, MemoryLink
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
-from kortex_core.security.principal import Principal
+from kortex_core.repositories.org_repo import OrgRepository
+from kortex_core.security.plan_limits import QuotaExceededError, max_memories
+from kortex_core.security.principal import Principal, ScopeRef
 from kortex_core.services.access_control import AccessControl, ResourceRef
 from kortex_core.services.access_control import AccessDeniedError as _AccessDenied
 
@@ -50,20 +53,53 @@ class MemoryService:
         self._repo = MemoryRepository(session, principal=principal)
         self._links = MemoryLinkRepository(session, principal=principal)
         self._ac = AccessControl()
+        # Plan-quota state, cached across a batch (e.g. git-log ingest) so we
+        # don't re-query the org/count per created memory.
+        self._org_plan: str | None = None
+        self._mem_count: int | None = None
 
-    async def create(
-        self, payload: CreateMemoryInput, *, embed_inline: bool = False
-    ) -> Memory:
-        from kortex_core.security.principal import ScopeRef
+    def _require_scope(self, name: str) -> None:
+        """Enforce API-key scopes (no-op for users, whose key_scopes is empty)."""
+        if not self._principal.has_key_scope(name):
+            raise _AccessDenied(f"api key missing required scope {name!r}")
 
+    async def _enforce_memory_quota(self) -> None:
+        """Reject creation past the org's plan cap. Unlimited plans skip the
+        count query entirely; capped plans count once then track locally."""
+        if self._org_plan is None:
+            org = await OrgRepository(self._session, principal=self._principal).get_by_id(
+                self._principal.org_id
+            )
+            self._org_plan = org.plan if org else "free"
+        cap = max_memories(self._org_plan)
+        if cap < 0:
+            return  # unlimited
+        if self._mem_count is None:
+            self._mem_count = await self._repo.count_for_org(self._principal.org_id)
+        if self._mem_count >= cap:
+            raise QuotaExceededError(
+                f"memory limit reached for the {self._org_plan} plan "
+                f"({cap:,} memories). Upgrade your plan to store more."
+            )
+        self._mem_count += 1
+
+    def _require_write(self, memory: Memory) -> None:
+        scope = ScopeRef(type=ScopeType(memory.scope_type), id=memory.scope_id)
+        if not self._ac.can_write(
+            self._principal,
+            ResourceRef(scope=scope, sensitivity=Sensitivity(memory.sensitivity)),
+        ):
+            raise _AccessDenied(f"cannot modify {memory.sensitivity} memory in {scope}")
+
+    async def create(self, payload: CreateMemoryInput, *, embed_inline: bool = False) -> Memory:
+        self._require_scope("write:memory")
         scope_ref = ScopeRef(type=payload.scope_type, id=payload.scope_id)
         if not self._ac.can_write(
             self._principal,
             ResourceRef(scope=scope_ref, sensitivity=payload.sensitivity),
         ):
-            raise _AccessDenied(
-                f"cannot write {payload.sensitivity.value} memory in {scope_ref}"
-            )
+            raise _AccessDenied(f"cannot write {payload.sensitivity.value} memory in {scope_ref}")
+        await self._enforce_memory_quota()
 
         embedding: list[float] | None = None
         embedding_model: str | None = None
@@ -90,18 +126,15 @@ class MemoryService:
             embedding=embedding,
             embedding_model=embedding_model,
             created_by=(
-                self._principal.actor_id
-                if self._principal.actor_kind.value == "user"
-                else None
+                self._principal.actor_id if self._principal.actor_kind.value == "user" else None
             ),
         )
 
     async def get(self, public_id: uuid.UUID) -> Memory | None:
+        self._require_scope("read:memory")
         memory = await self._repo.get_by_public_id(public_id)
         if memory is None:
             return None
-        from kortex_core.security.principal import ScopeRef
-
         scope = ScopeRef(type=ScopeType(memory.scope_type), id=memory.scope_id)
         if not self._ac.can_read(
             self._principal,
@@ -114,13 +147,23 @@ class MemoryService:
         self,
         *,
         scope: ScopeFilter | None = None,
-        tier=None,
-        kind=None,
+        tier: MemoryTier | None = None,
+        kind: MemoryKind | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Memory]:
+        self._require_scope("read:memory")
+        # Cap results to the sensitivity the caller may read; without this a
+        # VIEWER could read SECRET bodies via the list endpoint that GET-by-id
+        # denies. Superusers are unbounded.
+        max_sensitivity = None if self._principal.is_superuser else self._principal.max_sensitivity
         return await self._repo.list_(
-            scope=scope, tier=tier, kind=kind, limit=limit, offset=offset
+            scope=scope,
+            tier=tier,
+            kind=kind,
+            limit=limit,
+            offset=offset,
+            max_sensitivity=max_sensitivity,
         )
 
     async def update(
@@ -134,9 +177,20 @@ class MemoryService:
         importance: float | None = None,
         metadata: dict | None = None,
     ) -> Memory | None:
+        self._require_scope("write:memory")
         memory = await self._repo.get_by_public_id(public_id)
         if memory is None:
             return None
+        self._require_write(memory)
+        # Re-classifying to a higher tier requires write access at that tier too.
+        if sensitivity is not None and not self._ac.can_write(
+            self._principal,
+            ResourceRef(
+                scope=ScopeRef(type=ScopeType(memory.scope_type), id=memory.scope_id),
+                sensitivity=sensitivity,
+            ),
+        ):
+            raise _AccessDenied(f"cannot set sensitivity {sensitivity.value}")
         return await self._repo.update_fields(
             memory,
             title=title,
@@ -148,16 +202,20 @@ class MemoryService:
         )
 
     async def delete(self, public_id: uuid.UUID) -> bool:
+        self._require_scope("write:memory")
         memory = await self._repo.get_by_public_id(public_id)
         if memory is None:
             return False
+        self._require_write(memory)
         await self._repo.soft_delete(memory)
         return True
 
     async def set_pinned(self, public_id: uuid.UUID, pinned: bool) -> Memory | None:
+        self._require_scope("write:memory")
         memory = await self._repo.get_by_public_id(public_id)
         if memory is None:
             return None
+        self._require_write(memory)
         await self._repo.set_pinned(memory, pinned)
         return memory
 
@@ -179,6 +237,21 @@ class MemoryService:
             link_type=link_type,
             weight=weight,
         )
+
+    async def list_links(self, public_id: uuid.UUID) -> list[tuple[Memory, str]]:
+        """Linked memories for a memory (either direction), each with its link
+        type. Returns [] if the memory is missing or unreadable."""
+        self._require_scope("read:memory")
+        mem = await self._repo.get_by_public_id(public_id)
+        if mem is None:
+            return []
+        out: list[tuple[Memory, str]] = []
+        for link in await self._links.neighbors(mem.id):
+            other_id = link.to_memory_id if link.from_memory_id == mem.id else link.from_memory_id
+            other = await self._repo.get_by_id(other_id)
+            if other is not None:
+                out.append((other, link.link_type))
+        return out
 
     async def unlink(
         self,

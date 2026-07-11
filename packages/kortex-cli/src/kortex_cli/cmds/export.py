@@ -20,7 +20,9 @@ def export_scope(
     scope_type: Annotated[str, typer.Option()] = "project",
     scope_id: Annotated[int, typer.Option()] = 0,
     out: Annotated[Path, typer.Option("-o", "--out")] = Path("kortex-export.tar"),
-    include_attachments: Annotated[bool, typer.Option("--include-attachments/--skip-attachments")] = True,
+    include_attachments: Annotated[
+        bool, typer.Option("--include-attachments/--skip-attachments")
+    ] = True,
 ) -> None:
     """GET /v1/export and write the tarball to ``--out``."""
     profile = get_profile()
@@ -39,7 +41,7 @@ def export_scope(
         resp = httpx.get(
             f"{profile.api_url}/v1/export",
             headers=headers,
-            params=params,
+            params=params,  # type: ignore[arg-type]
             timeout=300.0,
         )
     except httpx.HTTPError as e:

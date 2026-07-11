@@ -102,6 +102,12 @@ class AccessControl:
             return True
         return self.role_for(principal, scope) == Role.OWNER
 
+    def is_admin_anywhere(self, principal: Principal) -> bool:
+        """True if the principal is admin/owner on at least one scope (or super)."""
+        if principal.is_superuser:
+            return True
+        return any(_ROLE_RANK[role] >= _ROLE_RANK[Role.ADMIN] for role in principal.roles.values())
+
     def visible_scopes(
         self,
         principal: Principal,
@@ -109,11 +115,7 @@ class AccessControl:
     ) -> list[ScopeRef]:
         if principal.is_superuser:
             return []  # superuser is unscoped — caller treats this as "all"
-        scopes = [
-            scope
-            for scope in principal.roles
-            if types is None or scope.type in types
-        ]
+        scopes = [scope for scope in principal.roles if types is None or scope.type in types]
         return scopes
 
     def require(

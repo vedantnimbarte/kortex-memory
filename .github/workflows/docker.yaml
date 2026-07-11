@@ -20,6 +20,7 @@ jobs:
           - { image: kortex-api,    dockerfile: docker/api.Dockerfile }
           - { image: kortex-mcp,    dockerfile: docker/mcp.Dockerfile }
           - { image: kortex-worker, dockerfile: docker/worker.Dockerfile }
+          - { image: kortex-web,    dockerfile: docker/web.Dockerfile }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

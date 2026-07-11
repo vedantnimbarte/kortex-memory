@@ -43,11 +43,9 @@ class OllamaLLM(LLM):
             payload["format"] = "json"
 
         try:
-            resp = await self._client.post(
-                f"{self._base_url}/api/chat", json=payload
-            )
+            resp = await self._client.post(f"{self._base_url}/api/chat", json=payload)
             resp.raise_for_status()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise LlmError(f"ollama call failed: {e}") from e
         data = resp.json()
         text = (data.get("message") or {}).get("content", "")

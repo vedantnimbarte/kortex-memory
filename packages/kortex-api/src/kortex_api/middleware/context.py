@@ -5,12 +5,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 
+from kortex_core.security.principal import reset_principal, set_principal
+from kortex_core.telemetry.logging import request_id_var
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-
-from kortex_core.security.principal import reset_principal, set_principal
-from kortex_core.telemetry.logging import request_id_var
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

@@ -56,10 +56,7 @@ def _build_key(*, org_id: int, scope_type: ScopeType, scope_id: int, filename: s
     UUID4 prefix so collisions can't happen across uploads.
     """
     safe = filename.replace("/", "_").replace("\\", "_")[:200]
-    return (
-        f"orgs/{org_id}/{scope_type.value}/{scope_id}/"
-        f"{uuid.uuid4()}/{safe}"
-    )
+    return f"orgs/{org_id}/{scope_type.value}/{scope_id}/{uuid.uuid4()}/{safe}"
 
 
 class AttachmentService:
@@ -68,6 +65,11 @@ class AttachmentService:
         self._principal = principal
         self._repo = AttachmentRepository(session, principal=principal)
         self._ac = AccessControl()
+
+    def _require_scope(self, name: str) -> None:
+        """Enforce API-key scopes (no-op for users, whose key_scopes is empty)."""
+        if not self._principal.has_key_scope(name):
+            raise AccessDeniedError(f"api key missing required scope {name!r}")
 
     async def presign_upload(
         self,
@@ -80,13 +82,12 @@ class AttachmentService:
         size_hint: int | None = None,
         metadata: dict | None = None,
     ) -> PresignResult:
+        self._require_scope("write:attachment")
         scope_ref = ScopeRef(type=scope_type, id=scope_id)
         if not self._ac.can_write(
             self._principal, ResourceRef(scope=scope_ref, sensitivity=sensitivity)
         ):
-            raise AccessDeniedError(
-                f"cannot write {sensitivity.value} attachment in {scope_ref}"
-            )
+            raise AccessDeniedError(f"cannot write {sensitivity.value} attachment in {scope_ref}")
 
         s = get_settings()
         if size_hint and size_hint > s.attachment_max_bytes:
@@ -113,9 +114,7 @@ class AttachmentService:
             size_bytes=size_hint or 0,
             metadata=metadata,
             created_by=(
-                self._principal.actor_id
-                if self._principal.actor_kind.value == "user"
-                else None
+                self._principal.actor_id if self._principal.actor_kind.value == "user" else None
             ),
         )
 
@@ -143,6 +142,7 @@ class AttachmentService:
         so we never enqueue work for a missing upload, then flip status to
         ``processing`` so the worker picks it up.
         """
+        self._require_scope("write:attachment")
         attachment = await self._repo.get_by_public_id(public_id)
         if attachment is None:
             return None
@@ -155,8 +155,21 @@ class AttachmentService:
         store = get_blob_store()
         meta = await store.head(bucket=attachment.s3_bucket, key=attachment.s3_key)
         if meta is None:
+            raise AttachmentError("object not found in blob store — finalize called before upload")
+
+        # Enforce the real uploaded size (the presigned PUT can't be trusted —
+        # size_hint is client-supplied and optional). Reject + delete oversize
+        # blobs so a client can't PUT 50GB and have it accepted.
+        s = get_settings()
+        if meta.size_bytes > s.attachment_max_bytes:
+            await store.delete(bucket=attachment.s3_bucket, key=attachment.s3_key)
+            await self._repo.mark_status(
+                attachment.id,
+                status=AttachmentStatus.FAILED,
+                error=f"upload exceeds max size ({meta.size_bytes} > {s.attachment_max_bytes})",
+            )
             raise AttachmentError(
-                "object not found in blob store — finalize called before upload"
+                f"attachment exceeds max size ({meta.size_bytes} > {s.attachment_max_bytes})"
             )
 
         await self._repo.mark_status(
@@ -176,6 +189,7 @@ class AttachmentService:
         return refreshed
 
     async def get(self, public_id: uuid.UUID) -> Attachment | None:
+        self._require_scope("read:attachment")
         attachment = await self._repo.get_by_public_id(public_id)
         if attachment is None:
             return None
@@ -190,21 +204,35 @@ class AttachmentService:
         return attachment
 
     async def list_(self, **kw) -> list[Attachment]:  # type: ignore[no-untyped-def]
+        self._require_scope("read:attachment")
+        # Cap to the sensitivity the caller may read (mirrors get()); without
+        # this the list endpoint leaks SECRET attachments to a VIEWER.
+        kw.setdefault(
+            "max_sensitivity",
+            None if self._principal.is_superuser else self._principal.max_sensitivity,
+        )
         return await self._repo.list_(**kw)
 
     async def delete(self, public_id: uuid.UUID) -> bool:
+        self._require_scope("write:attachment")
         attachment = await self._repo.get_by_public_id(public_id)
         if attachment is None:
             return False
+        if not self._ac.can_write(
+            self._principal,
+            ResourceRef(
+                scope=ScopeRef(type=ScopeType(attachment.scope_type), id=attachment.scope_id),
+                sensitivity=Sensitivity(attachment.sensitivity),
+            ),
+        ):
+            raise AccessDeniedError(f"cannot delete {attachment.sensitivity} attachment")
         await self._repo.soft_delete(attachment)
         # Worker can vacuum the blob later via `kortex.attachment.gc`; we keep
         # the row soft-deleted so processing-in-flight doesn't crash.
         return True
 
     async def mark_failed(self, attachment_id: int, error: str) -> None:
-        await self._repo.mark_status(
-            attachment_id, status=AttachmentStatus.FAILED, error=error
-        )
+        await self._repo.mark_status(attachment_id, status=AttachmentStatus.FAILED, error=error)
 
     async def mark_ready(self, attachment_id: int) -> None:
         await self._repo.mark_status(attachment_id, status=AttachmentStatus.READY)
@@ -221,11 +249,8 @@ def _enqueue_process(attachment_id: int) -> None:
     except ImportError:  # pragma: no cover - celery is a worker dep
         return
     try:
-        current_app.send_task(
-            "kortex.attachment.process_attachment", args=[attachment_id]
-        )
-    except Exception:  # noqa: BLE001 - never block the API on broker availability
+        current_app.send_task("kortex.attachment.process_attachment", args=[attachment_id])
+    except Exception:
         # The task can also be picked up by a periodic scan over pending rows
         # if the operator runs one — finalize is not the only entry point.
         pass
-

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from kortex_core.settings.config import KortexSettings
 
 pytestmark = pytest.mark.unit
@@ -19,8 +18,32 @@ def test_defaults_load(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_cors_origins_split(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(
-        "KORTEX_API_CORS_ORIGINS", "http://a.test, http://b.test,http://c.test"
-    )
+    monkeypatch.setenv("KORTEX_API_CORS_ORIGINS", "http://a.test, http://b.test,http://c.test")
     s = KortexSettings()
     assert s.api_cors_origins == ["http://a.test", "http://b.test", "http://c.test"]
+
+
+def test_cors_wildcard_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KORTEX_API_CORS_ORIGINS", "http://a.test,*")
+    with pytest.raises(ValueError, match="may not contain"):
+        KortexSettings()
+
+
+def test_production_rejects_default_jwt_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KORTEX_ENV", "production")
+    monkeypatch.setenv("KORTEX_DATABASE_URL", "postgresql+asyncpg://x:y@h:5432/d")
+    # jwt_secret left at its insecure default → must refuse to boot.
+    with pytest.raises(ValueError, match="insecure development defaults"):
+        KortexSettings()
+
+
+def test_production_accepts_real_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KORTEX_ENV", "production")
+    monkeypatch.setenv("KORTEX_DATABASE_URL", "postgresql+asyncpg://x:y@h:5432/d")
+    monkeypatch.setenv("KORTEX_JWT_SECRET", "a-real-32-byte-secret-value-xxxxxxxxxxxx")
+    monkeypatch.setenv("KORTEX_S3_ACCESS_KEY", "AKIAREAL")
+    monkeypatch.setenv("KORTEX_S3_SECRET_KEY", "realsecret")
+    s = KortexSettings()
+    assert s.is_production

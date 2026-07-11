@@ -11,13 +11,23 @@ spec:
     - host: {{ .Values.api.ingress.host }}
       http:
         paths:
+          # API surfaces route to the api service; everything else is the SPA.
+          {{- range $p := list "/v1" "/health" "/readyz" "/livez" "/metrics" }}
+          - path: {{ $p }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "kortex.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "kortex.fullname" . }}-api
+                name: {{ include "kortex.fullname" . }}-web
                 port:
-                  number: {{ .Values.api.service.port }}
+                  number: {{ .Values.web.service.port }}
   tls:
     - hosts:
         - {{ .Values.api.ingress.host }}

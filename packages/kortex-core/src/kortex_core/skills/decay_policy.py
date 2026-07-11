@@ -58,8 +58,7 @@ class DecayPolicy(Protocol):
         *,
         now: dt.datetime,
         median_access_count: int = 1,
-    ) -> DecayDecision:
-        ...
+    ) -> DecayDecision: ...
 
 
 class ExponentialDecayPolicy(DecayPolicy):
@@ -111,20 +110,14 @@ class ExponentialDecayPolicy(DecayPolicy):
         should_hard_delete = False
         if inputs.tier == MemoryTier.SHORT:
             age_days = (now - inputs.created_at).total_seconds() / 86400.0
-            if (
-                age_days >= s.decay_short_delete_age_days
-                and score < s.decay_short_delete_threshold
-            ):
+            if age_days >= s.decay_short_delete_age_days and score < s.decay_short_delete_threshold:
                 should_hard_delete = True
 
         # Archive mid memories that are old AND faded.
         should_archive = False
         if inputs.tier == MemoryTier.MID:
             age_days = (now - inputs.created_at).total_seconds() / 86400.0
-            if (
-                age_days >= s.decay_mid_archive_age_days
-                and score < s.decay_mid_archive_threshold
-            ):
+            if age_days >= s.decay_mid_archive_age_days and score < s.decay_mid_archive_threshold:
                 should_archive = True
 
         return DecayDecision(

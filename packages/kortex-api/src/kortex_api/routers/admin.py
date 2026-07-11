@@ -41,16 +41,12 @@ def _dispatch(task_name: str, *args: Any) -> AdminTaskOut:
         )
     try:
         async_result = current_app.send_task(task_name, args=list(args))
-        return AdminTaskOut(
-            task=task_name, task_id=async_result.id, dispatched=True
-        )
-    except Exception as e:  # noqa: BLE001 - never leak broker errors
-        return AdminTaskOut(
-            task=task_name, task_id=None, dispatched=False, detail=str(e)
-        )
+        return AdminTaskOut(task=task_name, task_id=async_result.id, dispatched=True)
+    except Exception as e:
+        return AdminTaskOut(task=task_name, task_id=None, dispatched=False, detail=str(e))
 
 
-def _require_superuser(principal) -> None:  # type: ignore[no-untyped-def]
+def _require_superuser(principal) -> None:
     if not principal.is_superuser:
         raise forbidden("superuser required")
 
@@ -81,14 +77,11 @@ async def reindex_embeddings(
     # Re-embedding is done by ``embed_pending`` once embeddings are cleared.
     # The full sweep is a one-shot SQL UPDATE we issue here, then we kick the
     # embed task once to start draining.
+    from kortex_core.db.session import session_scope
     from sqlalchemy import text
 
-    from kortex_core.db.session import session_scope
-
     async with session_scope() as session:
-        await session.execute(
-            text("UPDATE memories SET embedding = NULL, embedding_model = NULL")
-        )
+        await session.execute(text("UPDATE memories SET embedding = NULL, embedding_model = NULL"))
     result = _dispatch("kortex.embedding.embed_pending")
     return AdminTaskOut(
         task=result.task,

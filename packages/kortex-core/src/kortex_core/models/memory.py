@@ -120,19 +120,13 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         nullable=False,
     )
 
-    metadata_: Mapped[dict] = mapped_column(
-        "metadata", JSONB, nullable=False, default=dict
-    )
-    expires_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class MemoryLink(Base):
     __tablename__ = "memory_links"
-    __table_args__ = (
-        Index("ix_memory_links_to", "to_memory_id"),
-    )
+    __table_args__ = (Index("ix_memory_links_to", "to_memory_id"),)
 
     from_memory_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -150,9 +144,7 @@ class MemoryLink(Base):
         default=MemoryLinkType.RELATED.value,
     )
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     from_memory: Mapped[Memory] = relationship(foreign_keys=[from_memory_id])
     to_memory: Mapped[Memory] = relationship(foreign_keys=[to_memory_id])
