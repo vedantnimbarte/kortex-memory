@@ -12,14 +12,14 @@ from kortex_core.skills.decay_policy import (
 
 
 def _inputs(**overrides):  # type: ignore[no-untyped-def]
-    base = dict(
-        importance=0.5,
-        access_count=0,
-        last_accessed_at=None,
-        created_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
-        tier=MemoryTier.SHORT,
-        pinned=False,
-    )
+    base = {
+        "importance": 0.5,
+        "access_count": 0,
+        "last_accessed_at": None,
+        "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        "tier": MemoryTier.SHORT,
+        "pinned": False,
+    }
     base.update(overrides)
     return DecayInputs(**base)
 

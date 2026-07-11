@@ -12,7 +12,6 @@ from __future__ import annotations
 import uuid
 
 import pytest
-
 from kortex_core.db.session import session_scope
 from kortex_core.db.types import ActorKind, Role, ScopeType
 from kortex_core.repositories.org_repo import OrgRepository
@@ -22,7 +21,6 @@ from kortex_core.services.api_key_service import ApiKeyService
 from kortex_core.services.project_service import ProjectService
 from kortex_core.services.user_service import UserService
 from kortex_core.services.workspace_service import WorkspaceService
-
 from kortex_mcp.auth import principal_from_api_key
 from kortex_mcp.context import McpRuntime, set_runtime
 from kortex_mcp.tools import all_tools
@@ -169,9 +167,7 @@ async def test_remember_list_search_delete_roundtrip(session) -> None:  # type: 
     assert any(h["public_id"] == a["public_id"] for h in hits)
 
     # pin → update → get round trip on `a`.
-    pinned = await _tool("pin_memory").handler(
-        {"public_id": a["public_id"], "pinned": True}
-    )
+    pinned = await _tool("pin_memory").handler({"public_id": a["public_id"], "pinned": True})
     assert pinned is not None and pinned["pinned"] is True
 
     updated = await _tool("update_memory").handler(
@@ -215,9 +211,7 @@ async def test_session_start_list_end(session) -> None:  # type: ignore[no-untyp
     assert started["ended_at"] is None
     session_public_id = started["public_id"]
 
-    listed = await _tool("list_sessions").handler(
-        {"project_public_id": project_public_id}
-    )
+    listed = await _tool("list_sessions").handler({"project_public_id": project_public_id})
     assert any(s["public_id"] == session_public_id for s in listed)
 
     ended = await _tool("end_session").handler({"public_id": session_public_id})

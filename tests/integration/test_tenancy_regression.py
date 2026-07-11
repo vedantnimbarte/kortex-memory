@@ -16,7 +16,6 @@ from __future__ import annotations
 import uuid
 
 import pytest
-
 from kortex_core.db.session import session_scope
 from kortex_core.db.types import (
     ActorKind,
@@ -40,7 +39,6 @@ from kortex_core.services.memory_service import (
 from kortex_core.services.project_service import ProjectService
 from kortex_core.services.user_service import UserService
 from kortex_core.services.workspace_service import WorkspaceService
-
 from kortex_mcp.auth import principal_from_api_key
 from kortex_mcp.context import McpRuntime, set_runtime
 from kortex_mcp.tools import all_tools
@@ -64,9 +62,7 @@ def _tool(name: str):
     raise KeyError(name)
 
 
-async def _provision_org(
-    session, slug_prefix: str, viewer_role: Role = Role.OWNER
-):  # type: ignore[no-untyped-def]
+async def _provision_org(session, slug_prefix: str, viewer_role: Role = Role.OWNER):  # type: ignore[no-untyped-def]
     """Return (org_id, project_id, api_key_plaintext)."""
     sys_p = _superuser()
     org = await OrgRepository(session, principal=sys_p).create(
@@ -91,9 +87,7 @@ async def _provision_org(
         (ScopeType.WORKSPACE, ws.id),
         (ScopeType.PROJECT, proj.id),
     ):
-        await user_svc.grant(
-            user_id=user.id, scope_type=st, scope_id=sid, role=viewer_role
-        )
+        await user_svc.grant(user_id=user.id, scope_type=st, scope_id=sid, role=viewer_role)
     minted = await ApiKeyService(session, org_p).mint(
         name=f"{slug_prefix}-key",
         scopes=["read:memory", "write:memory"],
@@ -170,9 +164,7 @@ async def test_cross_org_isolation(session) -> None:  # type: ignore[no-untyped-
 
 async def test_viewer_cannot_see_secret(session) -> None:  # type: ignore[no-untyped-def]
     """A viewer-role principal must not see ``secret`` memories anywhere."""
-    org_id, project_id, key = await _provision_org(
-        session, "vsec", viewer_role=Role.VIEWER
-    )
+    org_id, project_id, key = await _provision_org(session, "vsec", viewer_role=Role.VIEWER)
     secret_id = await _write_memory(
         session, org_id, project_id, "very-secret-octopus", Sensitivity.SECRET
     )

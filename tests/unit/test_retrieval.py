@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from kortex_core.retrieval.hybrid import rrf_fuse
 from kortex_core.retrieval.token_budget import (
     BudgetItem,
