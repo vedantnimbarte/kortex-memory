@@ -12,6 +12,9 @@ image:
   worker:
     repository: kortex-worker
     tag: "0.1.0"
+  web:
+    repository: kortex-web
+    tag: "0.1.0"
   pullPolicy: IfNotPresent
 
 env: production
@@ -57,6 +60,15 @@ api:
     className: nginx
     host: kortex.example.com
     tlsSecret: kortex-tls
+
+web:
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 128Mi }
 
 mcp:
   replicas: 1

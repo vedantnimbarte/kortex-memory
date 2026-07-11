@@ -52,6 +52,21 @@ jobs:
       - run: uv sync --all-packages --dev
       - run: uv run pytest -m unit
 
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/kortex-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/kortex-web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
   test-integration:
     runs-on: ubuntu-latest
     services:

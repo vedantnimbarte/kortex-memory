@@ -138,6 +138,15 @@ services:
         condition: service_healthy
     command: ["kortex-worker", "beat"]
 
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
 volumes:
   kortex-pg:
   kortex-minio:
