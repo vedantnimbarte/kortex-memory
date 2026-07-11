@@ -71,12 +71,8 @@ async def _remember(args: dict[str, Any]) -> dict[str, Any]:
                 body=args["body"],
                 title=args.get("title", ""),
                 kind=MemoryKind(args.get("kind", MemoryKind.FACT.value)),
-                sensitivity=Sensitivity(
-                    args.get("sensitivity", Sensitivity.INTERNAL.value)
-                ),
-                source_type=MemorySource(
-                    args.get("source_type", MemorySource.MANUAL.value)
-                ),
+                sensitivity=Sensitivity(args.get("sensitivity", Sensitivity.INTERNAL.value)),
+                source_type=MemorySource(args.get("source_type", MemorySource.MANUAL.value)),
                 source_ref=args.get("source_ref"),
                 importance=float(args.get("importance", 0.5)),
                 pinned=bool(args.get("pinned", False)),
@@ -225,9 +221,7 @@ async def _update_memory(args: dict[str, Any]) -> dict[str, Any] | None:
             title=args.get("title"),
             body=args.get("body"),
             kind=MemoryKind(args["kind"]) if args.get("kind") else None,
-            sensitivity=(
-                Sensitivity(args["sensitivity"]) if args.get("sensitivity") else None
-            ),
+            sensitivity=(Sensitivity(args["sensitivity"]) if args.get("sensitivity") else None),
             importance=args.get("importance"),
             metadata=args.get("metadata"),
         )
@@ -300,9 +294,7 @@ _DELETE = ToolDef(
 async def _pin_memory(args: dict[str, Any]) -> dict[str, Any] | None:
     async with tool_context() as (session, principal):
         svc = MemoryService(session, principal)
-        memory = await svc.set_pinned(
-            uuid.UUID(args["public_id"]), bool(args.get("pinned", True))
-        )
+        memory = await svc.set_pinned(uuid.UUID(args["public_id"]), bool(args.get("pinned", True)))
         return _memory_out(memory) if memory else None
 
 
@@ -334,9 +326,7 @@ async def _link_memories(args: dict[str, Any]) -> dict[str, Any]:
         link = await svc.link(
             from_public_id=uuid.UUID(args["from_public_id"]),
             to_public_id=uuid.UUID(args["to_public_id"]),
-            link_type=MemoryLinkType(
-                args.get("link_type", MemoryLinkType.RELATED.value)
-            ),
+            link_type=MemoryLinkType(args.get("link_type", MemoryLinkType.RELATED.value)),
             weight=float(args.get("weight", 1.0)),
         )
         return {

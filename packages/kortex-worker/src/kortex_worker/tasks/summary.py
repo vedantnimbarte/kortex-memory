@@ -10,8 +10,6 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 
-from sqlalchemy import text
-
 from kortex_core.db.engine import close_engine
 from kortex_core.db.session import session_scope
 from kortex_core.db.types import ActorKind, MessageRole
@@ -19,6 +17,7 @@ from kortex_core.models.session import Conversation, Message
 from kortex_core.security.principal import Principal
 from kortex_core.skills.summarizer import get_summarizer
 from kortex_core.telemetry.logging import get_logger
+from sqlalchemy import text
 
 from kortex_worker.celery_app import celery_app
 
@@ -72,7 +71,7 @@ async def _summarise_conversation(conversation_id: int) -> bool:
         rendered = list(reversed([(str(r[0]), str(r[1])) for r in msg_rows]))
         try:
             summary = await summarizer.summarize(rendered)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("summary_failed", conversation_id=conversation_id, error=str(e))
             return False
         if not summary.strip():

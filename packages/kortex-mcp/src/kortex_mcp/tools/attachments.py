@@ -54,9 +54,7 @@ async def _attach_file(args: dict[str, Any]) -> dict[str, Any]:
                 scope_id=int(args["scope_id"]),
                 filename=args["filename"],
                 mime=args.get("mime"),
-                sensitivity=Sensitivity(
-                    args.get("sensitivity", Sensitivity.INTERNAL.value)
-                ),
+                sensitivity=Sensitivity(args.get("sensitivity", Sensitivity.INTERNAL.value)),
                 size_hint=args.get("size_hint"),
                 metadata=args.get("metadata"),
             )

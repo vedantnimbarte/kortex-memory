@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from celery import Celery
-
 from kortex_core.settings import get_settings
 from kortex_core.telemetry.logging import configure_logging
 from kortex_core.telemetry.otel import configure_otel
