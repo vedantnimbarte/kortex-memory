@@ -9,7 +9,7 @@
 ## First clone
 
 ```sh
-git clone https://github.com/anthropic/kortex-memory
+git clone git@github.com:vedantnimbarte/kortex-memory.git
 cd kortex-memory
 uv sync
 docker compose -f docker/compose.yaml up -d postgres redis minio

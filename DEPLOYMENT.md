@@ -322,7 +322,7 @@ If Kubernetes is overkill for your workload, the `docker/compose.yaml`
 production-grade variant runs on a single VM:
 
 ```bash
-git clone https://github.com/anthropic/kortex-memory
+git clone git@github.com:vedantnimbarte/kortex-memory.git
 cd kortex-memory
 cp .env.example .env       # edit for production: real DB URL, S3 creds, JWT secret
 docker compose -f docker/compose.yaml up -d
