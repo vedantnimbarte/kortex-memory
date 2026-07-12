@@ -31,7 +31,7 @@ memory layer in under 15 minutes.
 ## 2. Clone + install
 
 ```bash
-git clone https://github.com/anthropic/kortex-memory
+git clone git@github.com:vedantnimbarte/kortex-memory.git
 cd kortex-memory
 uv sync --all-packages
 ```

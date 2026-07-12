@@ -11,7 +11,7 @@ pip install kortex-cli
 …or from the workspace (for hacking):
 
 ```sh
-git clone https://github.com/anthropic/kortex-memory
+git clone git@github.com:vedantnimbarte/kortex-memory.git
 cd kortex-memory
 uv sync
 ```
