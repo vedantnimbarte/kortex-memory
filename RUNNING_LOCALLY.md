@@ -101,7 +101,7 @@ kortex dev seed complete
   org:        kortex (id=1)
   workspace:  default (id=1)
   project:    playground (id=1)
-  admin:      admin@kortex.local / kortex-dev-password
+  admin:      admin@kortex.dev / kortex-dev-password
   api key:    kx_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ============================================================
 ```

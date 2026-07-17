@@ -35,7 +35,7 @@ def _superuser(org_id: int = 0) -> Principal:
 
 
 async def main() -> int:
-    admin_email = os.environ.get("KORTEX_SEED_EMAIL", "admin@kortex.local")
+    admin_email = os.environ.get("KORTEX_SEED_EMAIL", "admin@kortex.dev")
     admin_password = os.environ.get("KORTEX_SEED_PASSWORD", "kortex-dev-password")
     org_slug = os.environ.get("KORTEX_SEED_ORG", "kortex")
     ws_slug = os.environ.get("KORTEX_SEED_WORKSPACE", "default")
