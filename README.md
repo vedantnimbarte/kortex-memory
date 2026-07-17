@@ -135,7 +135,7 @@ make seed       # uv run python scripts/seed_dev.py
 ```
 
 Prints a dev org, workspace, project, admin login
-(`admin@kortex.local` / `kortex-dev-password`), and a plaintext API key
+(`admin@kortex.dev` / `kortex-dev-password`), and a plaintext API key
 (`kx_...`) **shown exactly once — copy it.** Customise via `KORTEX_SEED_EMAIL`,
 `KORTEX_SEED_PASSWORD`, `KORTEX_SEED_ORG`, `KORTEX_SEED_WORKSPACE`,
 `KORTEX_SEED_PROJECT`.

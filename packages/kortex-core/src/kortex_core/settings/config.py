@@ -60,7 +60,7 @@ class KortexSettings(BaseSettings):
     # Base URL of the web SPA, used to build links in emails (reset/verify).
     web_base_url: str = "http://localhost:5173"
     # From-address for outbound mail.
-    email_from: str = "no-reply@kortex.local"
+    email_from: str = "no-reply@kortex.dev"
     # Delivery backend: "log" (dev — surfaces links in logs) or "smtp".
     email_backend: Literal["log", "smtp"] = "log"
     smtp_host: str = "localhost"

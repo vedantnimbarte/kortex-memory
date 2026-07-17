@@ -9,6 +9,7 @@ authors = [{ name = "Kortex Memory" }]
 
 [tool.uv.workspace]
 members = ["packages/*"]
+exclude = ["packages/kortex-web"]
 
 [tool.uv.sources]
 kortex-core = { workspace = true }
