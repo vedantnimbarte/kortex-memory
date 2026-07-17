@@ -61,6 +61,20 @@ export type Memory = {
   metadata: Record<string, unknown>;
 };
 
+export type CountSlice = { label: string; value: number };
+export type Analytics = {
+  count: number;
+  pinned: number;
+  avg_decay: number;
+  total_access: number;
+  by_tier: CountSlice[];
+  by_kind: CountSlice[];
+  by_sensitivity: CountSlice[];
+  decay_health: { healthy: number; aging: number; faded: number };
+  top_accessed: Memory[];
+  timeline: number[];
+};
+
 export type SearchHit = {
   public_id: string;
   title: string;

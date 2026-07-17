@@ -46,7 +46,7 @@ export default function SearchPage() {
         <h1 className="mt-2 text-2xl font-semibold text-ink">Hybrid search</h1>
         <p className="mt-2 text-sm text-muted">
           Direct vector + keyword ranking — no planning. For multi-hop reasoning, use{" "}
-          <Link to="/app" className="text-copper hover:text-copper-bright">
+          <Link to="/app/recall" className="text-copper hover:text-copper-bright">
             Recall
           </Link>
           .

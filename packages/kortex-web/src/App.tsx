@@ -11,6 +11,7 @@ import SignupPage from "./pages/SignupPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
+import DashboardPage from "./pages/DashboardPage";
 import RecallPage from "./pages/RecallPage";
 import SearchPage from "./pages/SearchPage";
 import MemoriesPage from "./pages/MemoriesPage";
@@ -63,7 +64,8 @@ export default function App() {
                   </RequireAuth>
                 }
               >
-                <Route index element={<RecallPage />} />
+                <Route index element={<DashboardPage />} />
+                <Route path="recall" element={<RecallPage />} />
                 <Route path="search" element={<SearchPage />} />
                 <Route path="memories" element={<MemoriesPage />} />
                 <Route path="memories/:id" element={<MemoryDetailPage />} />

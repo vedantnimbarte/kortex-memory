@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError } from "../lib/api";
 import { useScope } from "../lib/scope";
 import type { ContextBundle } from "../lib/types";
@@ -102,20 +103,22 @@ export default function RecallPage() {
                 <p className="text-sm text-muted">No memories matched. Try a broader query.</p>
               )}
               {bundle.candidates.map((c) => (
-                <Card key={c.public_id} className="p-4">
-                  <div className="flex items-center gap-2">
-                    <TierChip tier={c.tier} />
-                    <SensitivityChip level={c.sensitivity} />
-                    <span className="ml-auto font-mono text-[11px] tabular-nums text-copper">
-                      {c.final_score.toFixed(3)}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-medium text-ink">{c.title || "Untitled"}</p>
-                  <p className="mt-1 line-clamp-3 text-sm text-muted">{c.body}</p>
-                  <div className="mt-2">
-                    <MonoId id={c.public_id} />
-                  </div>
-                </Card>
+                <Link key={c.public_id} to={`/app/memories/${c.public_id}`} className="block">
+                  <Card className="panel panel-hover p-4">
+                    <div className="flex items-center gap-2">
+                      <TierChip tier={c.tier} />
+                      <SensitivityChip level={c.sensitivity} />
+                      <span className="ml-auto font-mono text-[11px] tabular-nums text-copper">
+                        {c.final_score.toFixed(3)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-ink">{c.title || "Untitled"}</p>
+                    <p className="mt-1 line-clamp-3 text-sm text-muted">{c.body}</p>
+                    <div className="mt-2">
+                      <MonoId id={c.public_id} />
+                    </div>
+                  </Card>
+                </Link>
               ))}
             </div>
 
