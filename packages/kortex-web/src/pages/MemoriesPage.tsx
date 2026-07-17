@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useScope } from "../lib/scope";
+import { KIND_COLOR } from "../lib/analytics";
 import type { Memory, MemoryKind, Sensitivity } from "../lib/types";
 import {
   Banner,
@@ -33,12 +34,53 @@ const KINDS: MemoryKind[] = [
 ];
 const SENSITIVITIES: Sensitivity[] = ["public", "internal", "confidential", "secret"];
 
+type SortKey = "recent" | "accessed" | "retention" | "title";
+const SORTS: { key: SortKey; label: string; cmp: (a: Memory, b: Memory) => number }[] = [
+  { key: "recent", label: "Newest", cmp: (a, b) => b.created_at.localeCompare(a.created_at) },
+  { key: "accessed", label: "Most recalled", cmp: (a, b) => b.access_count - a.access_count },
+  { key: "retention", label: "Strongest", cmp: (a, b) => b.decay_score - a.decay_score },
+  { key: "title", label: "Title A–Z", cmp: (a, b) => (a.title || "").localeCompare(b.title || "") },
+];
+
 export default function MemoriesPage() {
   const { active } = useScope();
   const qc = useQueryClient();
   const [composing, setComposing] = useState(false);
 
   const [limit, setLimit] = useState(50);
+  const [filter, setFilter] = useState("");
+  const [kindFilter, setKindFilter] = useState<MemoryKind | "">("");
+  const [sort, setSort] = useState<SortKey>("recent");
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const bulk = useMutation({
+    mutationFn: (action: "pin" | "unpin" | "delete") =>
+      api<{ affected: number }>("/v1/memories/bulk", {
+        method: "POST",
+        body: JSON.stringify({ action, public_ids: [...selected] }),
+      }),
+    onSuccess: () => {
+      setSelected(new Set());
+      void qc.invalidateQueries({ queryKey: ["memories"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-analytics"] });
+    },
+  });
+
+  function runBulk(action: "pin" | "unpin" | "delete") {
+    if (action === "delete" && !window.confirm(`Delete ${selected.size} selected memories?`)) return;
+    bulk.mutate(action);
+  }
+
   const scopeKey = active ? `${active.scope_type}:${active.scope_id}` : "all";
   const { data: memories, isLoading, error } = useQuery({
     queryKey: ["memories", scopeKey, limit],
@@ -52,6 +94,17 @@ export default function MemoriesPage() {
     },
   });
   const canLoadMore = !!memories && memories.length === limit && limit < 200;
+
+  const visible = useMemo(() => {
+    if (!memories) return [];
+    const q = filter.trim().toLowerCase();
+    const cmp = SORTS.find((s) => s.key === sort)!.cmp;
+    return memories
+      .filter((m) => !kindFilter || m.kind === kindFilter)
+      .filter((m) => !pinnedOnly || m.pinned)
+      .filter((m) => !q || (m.title + " " + m.body).toLowerCase().includes(q))
+      .sort(cmp);
+  }, [memories, filter, kindFilter, sort, pinnedOnly]);
 
   return (
     <div className="space-y-6">
@@ -83,6 +136,51 @@ export default function MemoriesPage() {
       {isLoading && <Spinner />}
       {error && <Banner>{(error as ApiError).message}</Banner>}
 
+      {memories && memories.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter loaded memories…"
+            className="min-w-40 flex-1"
+            aria-label="Filter memories"
+          />
+          <Select
+            value={kindFilter}
+            onChange={(e) => setKindFilter(e.target.value as MemoryKind | "")}
+            className="w-auto"
+            aria-label="Filter by kind"
+          >
+            <option value="">All kinds</option>
+            {KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k.replace("_", " ")}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="w-auto"
+            aria-label="Sort memories"
+          >
+            {SORTS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+          <button
+            onClick={() => setPinnedOnly((v) => !v)}
+            className={`rounded-md border px-3 py-2 text-xs transition-colors ${
+              pinnedOnly ? "border-copper text-copper" : "border-line text-muted hover:text-ink"
+            }`}
+          >
+            ● Pinned
+          </button>
+        </div>
+      )}
+
       {memories && memories.length === 0 && (
         <EmptyState
           title="No memories here yet."
@@ -91,28 +189,55 @@ export default function MemoriesPage() {
         />
       )}
 
+      {memories && memories.length > 0 && visible.length === 0 && (
+        <p className="py-8 text-center text-sm text-faint">Nothing matches those filters.</p>
+      )}
+
+      {visible.length > 0 && (
+        <div className="flex items-center gap-3 text-xs text-muted">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              className="accent-copper"
+              checked={selected.size > 0 && visible.every((m) => selected.has(m.public_id))}
+              ref={(el) => {
+                if (el)
+                  el.indeterminate =
+                    selected.size > 0 && !visible.every((m) => selected.has(m.public_id));
+              }}
+              onChange={(e) =>
+                setSelected(e.target.checked ? new Set(visible.map((m) => m.public_id)) : new Set())
+              }
+            />
+            Select all ({visible.length})
+          </label>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-copper">{selected.size} selected</span>
+              <Button variant="ghost" onClick={() => runBulk("pin")} disabled={bulk.isPending}>
+                Pin
+              </Button>
+              <Button variant="ghost" onClick={() => runBulk("unpin")} disabled={bulk.isPending}>
+                Unpin
+              </Button>
+              <Button variant="ghost" onClick={() => runBulk("delete")} disabled={bulk.isPending}>
+                Delete
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {bulk.error && <Banner>{(bulk.error as ApiError).message}</Banner>}
+
       <div className="space-y-2.5">
-        {memories?.map((m) => (
-          <Link key={m.public_id} to={`/app/memories/${m.public_id}`} className="block">
-            <Card className="p-4 transition-colors hover:border-line-bright">
-              <div className="flex items-center gap-2">
-                <TierChip tier={m.tier} />
-                <SensitivityChip level={m.sensitivity} />
-                <span className="font-mono text-[10px] uppercase tracking-wider text-faint">{m.kind}</span>
-                {m.pinned && <span className="text-xs text-copper">● pinned</span>}
-                <span className="ml-auto text-xs text-faint">{formatDate(m.created_at)}</span>
-              </div>
-              <p className="mt-2 text-sm font-medium text-ink">{m.title || "Untitled"}</p>
-              <p className="mt-1 line-clamp-2 text-sm text-muted">{m.body}</p>
-              <div className="mt-3 flex items-center gap-4">
-                <div className="w-32">
-                  <DecayMeter value={m.decay_score} />
-                </div>
-                <span className="font-mono text-[10px] text-faint">accessed {m.access_count}×</span>
-                <MonoId id={m.public_id} />
-              </div>
-            </Card>
-          </Link>
+        {visible.map((m) => (
+          <MemoryRow
+            key={m.public_id}
+            memory={m}
+            selected={selected.has(m.public_id)}
+            onToggle={() => toggle(m.public_id)}
+          />
         ))}
       </div>
 
@@ -124,6 +249,68 @@ export default function MemoriesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function MemoryRow({
+  memory: m,
+  selected,
+  onToggle,
+}: {
+  memory: Memory;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const qc = useQueryClient();
+  const pin = useMutation({
+    mutationFn: (next: boolean) =>
+      api<Memory>(`/v1/memories/${m.public_id}/pin`, { method: next ? "POST" : "DELETE" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["memories"] }),
+  });
+
+  return (
+    <Card className={`panel panel-hover p-4 ${selected ? "ring-1 ring-copper" : ""}`}>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          className="accent-copper"
+          checked={selected}
+          onChange={onToggle}
+          aria-label="Select memory"
+        />
+        <TierChip tier={m.tier} />
+        <SensitivityChip level={m.sensitivity} />
+        <span
+          className="font-mono text-[10px] uppercase tracking-wider"
+          style={{ color: KIND_COLOR[m.kind] ?? "var(--color-faint)" }}
+        >
+          {m.kind.replace("_", " ")}
+        </span>
+        <button
+          onClick={() => pin.mutate(!m.pinned)}
+          disabled={pin.isPending}
+          title={m.pinned ? "Unpin" : "Pin"}
+          aria-pressed={m.pinned}
+          className={`ml-auto text-xs transition-colors disabled:opacity-40 ${
+            m.pinned ? "text-copper" : "text-faint hover:text-copper"
+          }`}
+        >
+          {m.pinned ? "● pinned" : "○ pin"}
+        </button>
+        <span className="text-xs text-faint">{formatDate(m.created_at)}</span>
+      </div>
+      <Link to={`/app/memories/${m.public_id}`} className="mt-2 block">
+        <p className="text-sm font-medium text-ink">{m.title || "Untitled"}</p>
+        <p className="mt-1 line-clamp-2 text-sm text-muted">{m.body}</p>
+      </Link>
+      <div className="mt-3 flex items-center gap-4">
+        <div className="w-32">
+          <DecayMeter value={m.decay_score} />
+        </div>
+        <span className="font-mono text-[10px] text-faint">accessed {m.access_count}×</span>
+        <MonoId id={m.public_id} />
+      </div>
+    </Card>
   );
 }
 

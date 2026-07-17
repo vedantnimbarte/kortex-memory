@@ -20,7 +20,11 @@ from kortex_core.db.types import (
 from kortex_core.embeddings.registry import get_embedder
 from kortex_core.models.memory import Memory, MemoryLink
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
-from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
+from kortex_core.repositories.memory_repo import (
+    MemoryAnalytics,
+    MemoryRepository,
+    ScopeFilter,
+)
 from kortex_core.repositories.org_repo import OrgRepository
 from kortex_core.security.plan_limits import QuotaExceededError, max_memories
 from kortex_core.security.principal import Principal, ScopeRef
@@ -166,6 +170,22 @@ class MemoryService:
             max_sensitivity=max_sensitivity,
         )
 
+    async def analytics(
+        self,
+        *,
+        now: dt.datetime,
+        scope: ScopeFilter | None = None,
+        days: int = 14,
+        top_n: int = 5,
+    ) -> MemoryAnalytics:
+        self._require_scope("read:memory")
+        # Same sensitivity cap as list_: aggregates only count what the caller
+        # may read, so a VIEWER's dashboard never leaks SECRET totals.
+        max_sensitivity = None if self._principal.is_superuser else self._principal.max_sensitivity
+        return await self._repo.analytics(
+            now=now, scope=scope, max_sensitivity=max_sensitivity, days=days, top_n=top_n
+        )
+
     async def update(
         self,
         public_id: uuid.UUID,
@@ -218,6 +238,23 @@ class MemoryService:
         self._require_write(memory)
         await self._repo.set_pinned(memory, pinned)
         return memory
+
+    async def bulk_apply(self, action: str, public_ids: Sequence[uuid.UUID]) -> int:
+        """Apply one action to many memories, reusing the single-item paths so
+        each still enforces scope + RBAC. Returns the number actually changed
+        (missing/unreadable ids are skipped); an access denial aborts the batch."""
+        changed = 0
+        for pid in public_ids:
+            if action == "pin":
+                ok = await self.set_pinned(pid, True) is not None
+            elif action == "unpin":
+                ok = await self.set_pinned(pid, False) is not None
+            elif action == "delete":
+                ok = await self.delete(pid)
+            else:
+                raise ValueError(f"unknown bulk action {action!r}")
+            changed += int(ok)
+        return changed
 
     async def link(
         self,

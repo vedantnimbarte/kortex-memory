@@ -6,8 +6,9 @@ import datetime as dt
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import Select, and_, func, select, text, update
 
 from kortex_core.db.types import (
     MemoryKind,
@@ -39,6 +40,23 @@ def _sensitivities_up_to(max_sensitivity: Sensitivity) -> list[str]:
 class ScopeFilter:
     scope_type: ScopeType
     scope_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryAnalytics:
+    """Org-wide (or scope-wide) aggregates for the dashboard. All counts are
+    computed in SQL over the full live set, not a sampled page."""
+
+    count: int
+    pinned: int
+    avg_decay: float
+    total_access: int
+    by_tier: list[tuple[str, int]]
+    by_kind: list[tuple[str, int]]
+    by_sensitivity: list[tuple[str, int]]
+    decay_health: tuple[int, int, int]  # (healthy >= .66, aging >= .33, faded)
+    top_accessed: list[Memory]
+    timeline: list[int]  # per-day new-memory counts, oldest→newest, len == days
 
 
 class MemoryRepository(BaseRepository[Memory]):
@@ -104,6 +122,86 @@ class MemoryRepository(BaseRepository[Memory]):
             .where(Memory.org_id == org_id, Memory.deleted_at.is_(None))
         )
         return int((await self._session.execute(stmt)).scalar_one())
+
+    async def analytics(
+        self,
+        *,
+        now: dt.datetime,
+        scope: ScopeFilter | None = None,
+        max_sensitivity: Sensitivity | None = None,
+        days: int = 14,
+        top_n: int = 5,
+    ) -> MemoryAnalytics:
+        """Compute dashboard aggregates in SQL over the whole live set.
+
+        ``max_sensitivity`` caps rows to what the caller may read (mirrors
+        :meth:`list_`); ``None`` means unbounded (superuser).
+        """
+        conds = [Memory.deleted_at.is_(None)]
+        if scope:
+            conds += [
+                Memory.scope_type == scope.scope_type.value,
+                Memory.scope_id == scope.scope_id,
+            ]
+        if max_sensitivity is not None:
+            conds.append(Memory.sensitivity.in_(_sensitivities_up_to(max_sensitivity)))
+
+        def base(*cols: Any) -> Select[Any]:
+            return self.tenant_query(*cols).where(*conds)
+
+        # Scalars + decay-health buckets in a single pass.
+        row = (
+            await self._session.execute(
+                base(
+                    func.count(),
+                    func.count().filter(Memory.pinned.is_(True)),
+                    func.coalesce(func.avg(Memory.decay_score), 0.0),
+                    func.coalesce(func.sum(Memory.access_count), 0),
+                    func.count().filter(Memory.decay_score >= 0.66),
+                    func.count().filter(
+                        and_(Memory.decay_score >= 0.33, Memory.decay_score < 0.66)
+                    ),
+                    func.count().filter(Memory.decay_score < 0.33),
+                )
+            )
+        ).one()
+
+        async def group(col: Any) -> list[tuple[str, int]]:
+            rows = (await self._session.execute(base(col, func.count()).group_by(col))).all()
+            return [(str(k), int(v)) for k, v in rows]
+
+        by_tier = await group(Memory.tier)
+        by_kind = await group(Memory.kind)
+        by_sensitivity = await group(Memory.sensitivity)
+
+        # Timeline: UTC day buckets, oldest→newest. Bucket in SQL (UTC), then
+        # fill missing days with zero so the array is always length `days`.
+        utc_midnight = dt.datetime(now.year, now.month, now.day, tzinfo=dt.UTC)
+        start = utc_midnight - dt.timedelta(days=days - 1)
+        day_col = func.date_trunc("day", func.timezone("UTC", Memory.created_at))
+        day_rows = (
+            await self._session.execute(
+                base(day_col, func.count()).where(Memory.created_at >= start).group_by(day_col)
+            )
+        ).all()
+        counts_by_day = {d.date(): int(c) for d, c in day_rows}
+        timeline = [counts_by_day.get((start + dt.timedelta(days=i)).date(), 0) for i in range(days)]
+
+        top_stmt = base(Memory).order_by(Memory.access_count.desc()).limit(top_n)
+        top_accessed = list((await self._session.execute(top_stmt)).scalars().all())
+
+        return MemoryAnalytics(
+            count=int(row[0]),
+            pinned=int(row[1]),
+            avg_decay=float(row[2]),
+            total_access=int(row[3]),
+            by_tier=by_tier,
+            by_kind=by_kind,
+            by_sensitivity=by_sensitivity,
+            decay_health=(int(row[4]), int(row[5]), int(row[6])),
+            top_accessed=top_accessed,
+            timeline=timeline,
+        )
 
     async def list_(
         self,

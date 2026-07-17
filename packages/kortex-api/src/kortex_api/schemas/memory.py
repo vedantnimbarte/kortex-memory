@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Literal
 
 from kortex_core.db.types import (
     MemoryKind,
@@ -53,6 +54,30 @@ class MemoryOut(APIModel):
     metadata_: dict = Field(alias="metadata")
 
 
+class CountSlice(APIModel):
+    label: str
+    value: int
+
+
+class DecayHealth(APIModel):
+    healthy: int
+    aging: int
+    faded: int
+
+
+class AnalyticsOut(APIModel):
+    count: int
+    pinned: int
+    avg_decay: float
+    total_access: int
+    by_tier: list[CountSlice]
+    by_kind: list[CountSlice]
+    by_sensitivity: list[CountSlice]
+    decay_health: DecayHealth
+    top_accessed: list[MemoryOut]
+    timeline: list[int]
+
+
 class MemoryUpdateIn(APIModel):
     title: str | None = Field(default=None, max_length=1_000)
     body: str | None = Field(default=None, min_length=1, max_length=100_000)
@@ -60,6 +85,15 @@ class MemoryUpdateIn(APIModel):
     sensitivity: Sensitivity | None = None
     importance: float | None = Field(default=None, ge=0.0, le=1.0)
     metadata: dict | None = None
+
+
+class MemoryBulkIn(APIModel):
+    action: Literal["pin", "unpin", "delete"]
+    public_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+
+
+class MemoryBulkOut(APIModel):
+    affected: int
 
 
 class MemoryLinkIn(APIModel):

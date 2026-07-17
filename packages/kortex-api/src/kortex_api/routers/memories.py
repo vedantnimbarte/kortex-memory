@@ -13,6 +13,8 @@ from kortex_api.deps import PrincipalDep, SessionDep
 from kortex_api.errors import not_found
 from kortex_api.schemas.memory import (
     LinkedMemoryOut,
+    MemoryBulkIn,
+    MemoryBulkOut,
     MemoryIn,
     MemoryLinkIn,
     MemoryOut,
@@ -70,6 +72,16 @@ async def list_memories(
     )
     memories = await svc.list_(scope=scope, tier=tier, kind=kind, limit=limit, offset=offset)
     return [MemoryOut.model_validate(m) for m in memories]
+
+
+@router.post("/bulk", response_model=MemoryBulkOut)
+async def bulk_memories(
+    payload: MemoryBulkIn, principal: PrincipalDep, session: SessionDep
+) -> MemoryBulkOut:
+    svc = MemoryService(session, principal)
+    affected = await svc.bulk_apply(payload.action, payload.public_ids)
+    await session.commit()
+    return MemoryBulkOut(affected=affected)
 
 
 @router.get("/{public_id}", response_model=MemoryOut)

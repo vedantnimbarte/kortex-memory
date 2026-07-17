@@ -1,5 +1,6 @@
 import type {
   ButtonHTMLAttributes,
+  CSSProperties,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
@@ -29,9 +30,19 @@ export function Button({ variant = "primary", size = "md", className, ...rest }:
 }
 
 // ── Surfaces ────────────────────────────────────────────────────────────────
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
+export function Card({
+  className,
+  children,
+  style,
+}: {
+  className?: string;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
   return (
-    <div className={cx("rounded-xl border border-line bg-surface", className)}>{children}</div>
+    <div className={cx("rounded-xl border border-line bg-surface", className)} style={style}>
+      {children}
+    </div>
   );
 }
 
@@ -204,4 +215,154 @@ export function formatDate(iso: string | null): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+export function formatNumber(n: number): string {
+  return n.toLocaleString(undefined);
+}
+
+/** Compact relative time: "just now", "3h", "5d", falling back to a date. */
+export function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d`;
+  return formatDate(iso);
+}
+
+// ── Analytics primitives ────────────────────────────────────────────────────
+/** Big signature figure with a mono label. */
+export function Stat({
+  value,
+  label,
+  sub,
+  accent = false,
+}: {
+  value: ReactNode;
+  label: string;
+  sub?: ReactNode;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-col">
+      <span
+        className={cx(
+          "font-mono text-3xl font-semibold tabular-nums leading-none tracking-tight",
+          accent ? "text-core" : "text-ink",
+        )}
+      >
+        {value}
+      </span>
+      <span className="mt-2 font-mono text-[11px] uppercase tracking-wider text-faint">{label}</span>
+      {sub && <span className="mt-1 text-xs text-muted">{sub}</span>}
+    </div>
+  );
+}
+
+export type Segment = { label: string; value: number; color: string };
+
+/** A single thin stacked bar — the ferrite thread carrying a distribution. */
+export function SegmentBar({ segments, height = 8 }: { segments: Segment[]; height?: number }) {
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  return (
+    <div className="space-y-3">
+      <div
+        className="flex w-full overflow-hidden rounded-full bg-surface-2"
+        style={{ height }}
+        role="img"
+        aria-label={segments.map((s) => `${s.label}: ${s.value}`).join(", ")}
+      >
+        {segments.map(
+          (s) =>
+            s.value > 0 && (
+              <div
+                key={s.label}
+                style={{ width: `${(s.value / total) * 100}%`, background: s.color }}
+                title={`${s.label}: ${s.value}`}
+              />
+            ),
+        )}
+      </div>
+      <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {segments.map((s) => (
+          <li key={s.label} className="flex items-center gap-1.5 text-xs text-muted">
+            <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+            <span className="capitalize">{s.label.replace("_", " ")}</span>
+            <span className="font-mono tabular-nums text-faint">{s.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Labeled rows with proportional bars — good for many categories. */
+export function BarList({ items }: { items: Segment[] }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <ul className="space-y-2.5">
+      {items.map((i) => (
+        <li key={i.label} className="flex items-center gap-3">
+          <span className="w-28 shrink-0 truncate font-mono text-[11px] uppercase tracking-wider text-muted">
+            {i.label.replace("_", " ")}
+          </span>
+          <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ width: `${(i.value / max) * 100}%`, background: i.color }}
+            />
+          </div>
+          <span className="w-8 shrink-0 text-right font-mono text-xs tabular-nums text-faint">{i.value}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Minimal SVG sparkline with a soft copper area fill. */
+export function Sparkline({
+  data,
+  width = 240,
+  height = 44,
+}: {
+  data: number[];
+  width?: number;
+  height?: number;
+}) {
+  if (data.length < 2) return <div style={{ height }} />;
+  const max = Math.max(1, ...data);
+  const stepX = width / (data.length - 1);
+  const y = (v: number) => height - 3 - (v / max) * (height - 6);
+  const pts = data.map((v, i) => `${i * stepX},${y(v)}`);
+  const line = `M${pts.join(" L")}`;
+  const area = `${line} L${width},${height} L0,${height} Z`;
+  return (
+    <svg width={width} height={height} className="w-full" preserveAspectRatio="none" aria-hidden>
+      <defs>
+        <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-copper)" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="var(--color-copper)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill="url(#spark-fill)" />
+      <path d={line} fill="none" stroke="var(--color-copper)" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Small labeled count pill. */
+export function Pill({ children, color }: { children: ReactNode; color?: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px]"
+      style={color ? { borderColor: `${color}55`, color } : undefined}
+    >
+      {children}
+    </span>
+  );
 }

@@ -5,9 +5,11 @@ import { useAuth } from "../lib/auth";
 import { useScope } from "../lib/scope";
 import { useToast } from "../lib/toast";
 import { Select } from "./ui";
+import CommandPalette from "./CommandPalette";
 
 const NAV: { to: string; label: string; end?: boolean }[] = [
-  { to: "/app", label: "Recall", end: true },
+  { to: "/app", label: "Dashboard", end: true },
+  { to: "/app/recall", label: "Recall" },
   { to: "/app/search", label: "Search" },
   { to: "/app/memories", label: "Memories" },
   { to: "/app/activity", label: "Activity" },
@@ -59,6 +61,7 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
+      <CommandPalette />
       {/* Sidebar */}
       <aside className="flex flex-col border-b border-line bg-surface lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-2.5 px-5 py-4">
@@ -128,6 +131,14 @@ export default function AppShell() {
               ))}
             </Select>
           </div>
+          <button
+            onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))}
+            className="ml-auto hidden items-center gap-2 rounded-md border border-line px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-line-bright hover:text-ink sm:inline-flex"
+            aria-label="Open command palette"
+          >
+            Jump to
+            <kbd className="rounded border border-line-bright px-1.5 py-0.5 font-mono text-[10px] text-faint">⌘K</kbd>
+          </button>
         </header>
         <main className="min-w-0 flex-1 px-6 py-8">
           <div className="mx-auto max-w-5xl">

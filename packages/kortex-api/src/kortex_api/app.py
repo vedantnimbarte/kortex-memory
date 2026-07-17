@@ -27,6 +27,7 @@ from kortex_api.middleware.metrics import PrometheusMiddleware, metrics_endpoint
 from kortex_api.middleware.ratelimit import RateLimitMiddleware
 from kortex_api.routers import (
     admin,
+    analytics,
     api_keys,
     attachments,
     auth,
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(memories.router)
     app.include_router(attachments.router)
     app.include_router(search.router)
+    app.include_router(analytics.router)
     app.include_router(ingest.router)
     app.include_router(export.router)
     app.include_router(billing.router)
