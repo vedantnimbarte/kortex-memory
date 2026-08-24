@@ -101,6 +101,10 @@ class KortexSettings(BaseSettings):
     embedder_model: str = "BAAI/bge-large-en-v1.5"
     embedder_dim: int = 1024
     embedder_batch_size: int = 64
+    embed_max_attempts: int = 5
+    """Retries before a memory is parked as failed instead of retried forever."""
+    embed_retry_base_seconds: int = 60
+    """Exponential backoff base: attempt N waits base * 2^(N-1), capped at an hour."""
     openai_api_key: SecretStr | None = None
     voyage_api_key: SecretStr | None = None
     cohere_api_key: SecretStr | None = None
@@ -121,6 +125,15 @@ class KortexSettings(BaseSettings):
     retrieval_top_k_bm25: int = 50
     retrieval_rrf_k: int = 60
     retrieval_default_max_tokens: int = 4000
+
+    # --- Conflict detection (write-path; surfaces stale/contradictory memories) ---
+    conflict_detection: bool = True
+    conflict_similarity_threshold: float = 0.82
+    """Cosine similarity a neighbour must clear before the judge even sees it."""
+    conflict_max_candidates: int = 5
+    conflict_min_confidence: float = 0.6
+    conflict_batch_size: int = 32
+    conflict_daily_quota_per_org: int = 2000
 
     # --- Memory tiers / decay ---
     decay_lambda_short: float = 0.30

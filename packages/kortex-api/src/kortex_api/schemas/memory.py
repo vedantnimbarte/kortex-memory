@@ -52,6 +52,10 @@ class MemoryOut(APIModel):
     last_accessed_at: dt.datetime | None
     expires_at: dt.datetime | None
     metadata_: dict = Field(alias="metadata")
+    embedding_state: Literal["ok", "pending", "failed"] = "pending"
+    """``pending``/``failed`` mean this memory is not in vector search yet."""
+    embed_attempts: int = 0
+    embed_error: str | None = None
 
 
 class CountSlice(APIModel):

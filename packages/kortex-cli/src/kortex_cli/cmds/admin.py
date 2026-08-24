@@ -89,3 +89,39 @@ def consolidate(
             fail(str(e))
             return
     print_obj(result, json_output=json_output)
+
+
+@app.command("ingest-status")
+def ingest_status(json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Show how many memories are searchable, queued, or parked as failed."""
+    with ApiClient() as client:
+        try:
+            result = client.get("/v1/admin/ingest-status")
+        except CliApiError as e:
+            fail(str(e))
+            return
+    failures = result.pop("recent_failures", [])
+    print_obj(result, json_output=json_output)
+    if failures and not json_output:
+        print_obj(failures)
+
+
+@app.command("retry-embeddings")
+def retry_embeddings(
+    org_id: Annotated[int | None, typer.Option()] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Requeue memories parked after exhausting their embedding retries.
+
+    Unlike `reindex-embeddings`, this leaves successful vectors alone.
+    """
+    params: dict = {}
+    if org_id is not None:
+        params["org_id"] = org_id
+    with ApiClient() as client:
+        try:
+            result = client.post("/v1/admin/retry_embeddings", params=params)
+        except CliApiError as e:
+            fail(str(e))
+            return
+    print_obj(result, json_output=json_output)

@@ -8,7 +8,9 @@ from kortex_cli.cmds import (
     admin,
     attachment,
     auth,
+    doctor,
     export,
+    hook,
     ingest,
     key,
     memory,
@@ -20,6 +22,7 @@ from kortex_cli.cmds import (
     user,
     workspace,
 )
+from kortex_cli.cmds.init import init as init_command
 
 app = typer.Typer(
     name="kortex",
@@ -40,6 +43,9 @@ app.add_typer(recall.app, name="recall")
 app.add_typer(ingest.app, name="ingest")
 app.add_typer(export.app, name="export")
 app.add_typer(admin.app, name="admin")
+app.add_typer(hook.app, name="hook")
+app.add_typer(doctor.app, name="doctor")
+app.command("init")(init_command)
 
 
 if __name__ == "__main__":  # pragma: no cover

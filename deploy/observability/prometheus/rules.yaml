@@ -59,6 +59,39 @@ spec:
             summary: "Embedding backlog growing"
             description: "embed_pending isn't keeping up; scale worker HPA up."
 
+        - alert: KortexEmbedFailures
+          expr: |
+            kortex_embed_failed > 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "Memories parked after exhausting embedding retries"
+            description: >
+              These memories were accepted by the API and are NOT in vector search —
+              users believe they were stored. Inspect with
+              `kortex admin ingest-status`, fix the cause, then
+              `kortex admin retry-embeddings`.
+
+        - alert: KortexEmbedStalled
+          expr: |
+            kortex_embed_oldest_pending_seconds > 900
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Oldest unembedded memory is over 15 minutes old"
+            description: >
+              embed_pending is not draining — check that the worker and beat pods are
+              running and that the embedder model is loadable.
+
+        - alert: KortexEmbedPendingGrowing
+          expr: |
+            kortex_embed_pending > 1000
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: "Embedding backlog above 1000 memories"
+            description: "Writes are outpacing the embedder; scale the worker HPA up."
+
     - name: kortex.tenancy
       interval: 60s
       rules:

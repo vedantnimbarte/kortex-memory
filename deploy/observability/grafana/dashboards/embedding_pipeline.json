@@ -1,16 +1,22 @@
 {
-  "title": "Kortex — Embedding Pipeline",
+  "title": "Kortex \u2014 Embedding Pipeline",
   "uid": "kortex-embedding",
   "schemaVersion": 39,
   "version": 1,
-  "tags": ["kortex", "embeddings"],
+  "tags": [
+    "kortex",
+    "embeddings"
+  ],
   "panels": [
     {
       "id": 1,
       "type": "timeseries",
       "title": "Throughput (tokens/sec)",
       "targets": [
-        { "expr": "rate(kortex_embed_throughput_tokens_per_second_sum[5m])", "legendFormat": "tokens/sec" }
+        {
+          "expr": "rate(kortex_embed_throughput_tokens_per_second_sum[5m])",
+          "legendFormat": "tokens/sec"
+        }
       ]
     },
     {
@@ -18,7 +24,10 @@
       "type": "timeseries",
       "title": "embed_pending backlog (Redis queue)",
       "targets": [
-        { "expr": "redis_queue_depth{queue=\"embed\"}", "legendFormat": "queue depth" }
+        {
+          "expr": "redis_queue_depth{queue=\"embed\"}",
+          "legendFormat": "queue depth"
+        }
       ]
     },
     {
@@ -26,8 +35,102 @@
       "type": "stat",
       "title": "Active embedder model",
       "targets": [
-        { "expr": "kortex_embedder_info", "legendFormat": "{{model}}" }
+        {
+          "expr": "kortex_embedder_info",
+          "legendFormat": "{{model}}"
+        }
       ]
+    },
+    {
+      "id": 4,
+      "title": "Parked embeddings (accepted but NOT searchable)",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "kortex_embed_failed",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Pending embeddings",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "kortex_embed_pending",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Oldest pending memory (s)",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "kortex_embed_oldest_pending_seconds",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ]
 }
