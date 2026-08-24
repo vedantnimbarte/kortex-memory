@@ -41,24 +41,15 @@ kortex search "caching strategy"
 kortex recall "what did we decide about caching?" --synthesize
 ```
 
-## 5. Wire Claude Code
+## 5. Wire an agent
 
-Add to your Claude Code MCP config:
-
-```json
-{
-  "mcpServers": {
-    "kortex": {
-      "command": "kortex-mcp",
-      "args": ["stdio"],
-      "env": {
-        "KORTEX_API_KEY": "kx_...",
-        "KORTEX_DATABASE_URL": "postgresql+asyncpg://kortex:kortex@localhost:5432/kortex"
-      }
-    }
-  }
-}
+```bash
+kortex init claude-code    # or: cursor, codex, opencode
 ```
 
-Restart Claude Code and your agent now has `remember`, `recall`,
-`search_memory`, `attach_file`, `get_context_bundle`, and ten more tools.
+Resolves the Project scope for the current repo, mints a project-scoped key,
+picks a transport, writes the harness config, and verifies the round trip.
+Re-running is a no-op; `--dry-run` reports without writing.
+
+Restart the agent and it has `remember`, `recall`, `search_memory`,
+`attach_file`, `get_context_bundle`, and eleven more tools.

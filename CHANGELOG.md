@@ -3,6 +3,62 @@
 All notable changes to Kortex Memory are documented here. Versions follow
 Semantic Versioning; pre-1.0 releases may include incidental schema changes.
 
+## [Unreleased]
+
+### Added
+- **`kortex init <harness>`** — one command wires Claude Code, Cursor, Codex, or OpenCode to a
+  Kortex install: resolves (or creates) the Project scope for the current git repo, mints a
+  project-scoped API key, picks a transport (probes the MCP SSE endpoint, falls back to stdio),
+  merges a server entry into the harness config, and verifies with a write→read canary. Merges are
+  idempotent and never drop keys they did not add; an unparseable config aborts instead of being
+  overwritten, and any file being replaced is backed up to `<name>.bak`. `--dry-run` reports without
+  writing.
+- **`kortex hook session-start`** — installed into `.claude/settings.json` by `kortex init`
+  (skip with `--no-hooks`). Injects the project's memories into a starting Claude Code session.
+  Fails silently by design: no credentials, no backend, or no project scope yields empty context
+  and exit 0, so a memory lookup can never break a session.
+- **Contradiction surfacing** — a memory that supersedes or contradicts an existing one now
+  gets a `supersedes` / `contradicts` edge, written by a new `kortex.conflict.detect_pending`
+  worker task (every 60s) over embedded, never-judged memories. Candidates are the nearest
+  neighbours in the same scope and of the same kind, above a cosine-similarity floor; only
+  `fact` / `preference` / `decision` are judged. Recall and search annotate every hit with its
+  `conflicts`, and a memory superseded by another hit on the same page sorts last.
+  **Conflicts are surfaced, never resolved** — nothing is filtered, merged, or deleted, because
+  which side is right depends on conversation context the database does not have.
+  Pluggable via the new `ConflictJudge` skill; with no LLM configured it degrades to
+  `NullConflictJudge` and writes nothing. Off with `KORTEX_CONFLICT_DETECTION=false`.
+
+- **Write-path integrity** — a memory whose embedding fails is no longer silently absent from
+  vector search. A failed batch now falls back to per-item embedding, so one unembeddable input
+  costs one memory instead of the whole batch; every failure increments `embed_attempts`, records
+  the reason, and schedules an exponential backoff (capped at an hour); once attempts are
+  exhausted the memory is *parked* (`embed_failed_at`) rather than retried forever. A short
+  response from the embedder is caught too, instead of zip-truncating the tail away.
+- **`GET /v1/admin/ingest-status`** — pending / failed / ok counts, the age of the oldest
+  unembedded memory, and the most recent failures with their errors. Org-scoped for ordinary
+  callers, fleet-wide for superusers.
+- **`POST /v1/admin/retry_embeddings`** and **`kortex admin retry-embeddings`** — release parked
+  memories back into the queue. Unlike `reindex_embeddings`, successful vectors are left alone.
+- **`kortex doctor`** — checks the API, the credentials, and the embedding backlog, then writes a
+  canary memory, waits for it to be embedded, searches for it, and deletes it. Non-zero exit on
+  failure, so it works as a deploy gate or cron canary. `--skip-round-trip` for read-only checks.
+- **`kortex admin ingest-status`** — the CLI view of the same counters.
+- **Metrics + alerts** — `kortex_embed_pending`, `kortex_embed_failed`, and
+  `kortex_embed_oldest_pending_seconds` on `/metrics` (refreshed on scrape, cached 15s), with
+  `KortexEmbedFailures` / `KortexEmbedStalled` / `KortexEmbedPendingGrowing` alert rules and three
+  new Grafana panels.
+
+### Changed
+- Free plan raised from 1,000 to 25,000 memories.
+- `search_memory` / `recall` / `get_context_bundle` responses gained a `conflicts` array per hit.
+- `MemoryOut` gained `embedding_state` (`ok` / `pending` / `failed`), `embed_attempts`, and
+  `embed_error`, so a client can tell whether a memory is actually searchable yet.
+- `embed_pending` returns a result dict instead of a bare count.
+
+### Fixed
+- `tests/conftest.py` auto-marked tests by directory using a POSIX path check, so on Windows
+  `pytest -m unit` silently selected only the few files carrying an explicit `pytestmark`.
+
 ## [0.1.0] — 2026-05-11
 
 Initial release. All ten v0.1 milestones complete:

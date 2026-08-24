@@ -43,3 +43,19 @@ accepts `If-Match`; mismatch returns 412.
 
 Default per-key buckets: 600 read/min, 120 write/min, 30 recall/min. 429
 responses include `Retry-After`.
+
+## Write-path status
+
+`POST /v1/memories` returns 201 as soon as the memory is durably stored, but embedding happens
+asynchronously — until it completes the memory is not in vector search. `MemoryOut` therefore
+carries `embedding_state`:
+
+| Value | Meaning |
+|---|---|
+| `pending` | Queued or waiting out a retry backoff. |
+| `ok` | Embedded with the current model; searchable. |
+| `failed` | Retries exhausted. `embed_error` says why. Not searchable, not being retried. |
+
+`GET /v1/admin/ingest-status` aggregates this across the caller's org (all orgs for a
+superuser) and lists recent failures. `POST /v1/admin/retry_embeddings` (superuser) requeues
+parked memories. See the [runbook](../operators/runbooks.md) for triage.

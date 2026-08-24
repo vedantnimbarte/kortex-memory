@@ -15,6 +15,8 @@ sessions and tools.
 - **S3-compatible attachments** (MinIO in dev, S3/R2 in prod).
 - **Agentic retrieval** — an LLM plans multi-hop hybrid (vector + BM25 + recency) lookups; clean fallback to plain hybrid when the planner LLM is unavailable.
 - **Short / mid / long-term tiers** with auto-promotion, decay, and HDBSCAN consolidation.
+- **Contradiction surfacing** — when a memory supersedes or contradicts an older one, recall
+  returns both, flags the stale side, and sorts it last. Surfaced, never auto-resolved.
 - **Sensitivity tiers × RBAC** for fine-grained access control.
 - **OpenTelemetry traces, Prometheus metrics, structured JSON logs** from day one.
 - **Idempotency-Key + ETag/If-Match** on the API for safe client retries.
@@ -203,9 +205,27 @@ you only need to set the secrets.
 | **Environment** | `KORTEX_ENV` | `development` / `production`. |
 | **Frontend** | `VITE_API_BASE_URL` | Blank in dev (Vite proxy). Set to the API origin in prod, e.g. `https://api.kortex.example.com`. |
 
-## Wire Claude Code to your local Kortex
+## Wire an agent to your local Kortex
 
-Add to your Claude Code MCP config:
+One command per harness — Claude Code, Cursor, Codex, or OpenCode:
+
+```bash
+kortex init claude-code
+```
+
+It finds (or creates) the Project scope for the current git repo, mints a
+project-scoped API key, picks a transport (SSE if the MCP service is up, stdio
+otherwise), writes the harness config, and verifies with a write→read canary.
+Re-running is a no-op, `--dry-run` shows what it would do, and any file it
+replaces is backed up to `<name>.bak`.
+
+For Claude Code it also installs a `SessionStart` hook that injects the
+project's memories into every new session (`--no-hooks` to skip).
+
+Restart the agent — it now sees the 16 Kortex tools.
+
+<details>
+<summary>Prefer to wire it by hand?</summary>
 
 ```json
 {
@@ -223,8 +243,9 @@ Add to your Claude Code MCP config:
 }
 ```
 
-Restart Claude Code — your agent now sees the 16 Kortex tools. Full detail,
-CLI profiles, and troubleshooting in [RUNNING_LOCALLY.md](RUNNING_LOCALLY.md).
+</details>
+
+Full detail, CLI profiles, and troubleshooting in [RUNNING_LOCALLY.md](RUNNING_LOCALLY.md).
 
 ## Common tasks
 

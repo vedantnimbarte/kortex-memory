@@ -149,28 +149,41 @@ that's expected without `ANTHROPIC_API_KEY`. The fallback path is correct.
 
 ---
 
-## 8. Wire Claude Code to your local Kortex
+## 8. Wire an agent to your local Kortex
 
-Add to your Claude Code MCP config (typically
-`~/.config/claude-code/mcp_servers.json` or via `claude code config mcp`):
-
-```json
-{
-  "mcpServers": {
-    "kortex": {
-      "command": "kortex-mcp",
-      "args": ["stdio"],
-      "env": {
-        "KORTEX_API_KEY": "kx_xxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        "KORTEX_DATABASE_URL": "postgresql+asyncpg://kortex:kortex@localhost:5432/kortex",
-        "KORTEX_REDIS_URL": "redis://localhost:6379/0"
-      }
-    }
-  }
-}
+```bash
+kortex init claude-code    # or: cursor, codex, opencode
 ```
 
-Restart Claude Code. Your agent now sees 16 tools: `remember`, `recall`,
+Six steps, all idempotent:
+
+1. **Credentials** — checks the active CLI profile against `/v1/auth/whoami`.
+2. **Scope** — finds (or creates) the Project matching this git repo's directory name.
+3. **Key** — mints a project-scoped API key; falls back to the profile key when
+   the caller lacks the scopes to mint one.
+4. **Transport** — probes the MCP SSE endpoint (`:8765` by default); falls back
+   to stdio, which needs `KORTEX_DATABASE_URL` (taken from `--database-url`, the
+   environment, this repo's `.env`, or the compose default, in that order).
+5. **Config** — merges a `kortex` server entry into the harness config. Existing
+   servers and unrelated keys survive; a file that cannot be parsed aborts the run
+   rather than being overwritten; anything replaced is backed up to `<name>.bak`.
+   For Claude Code it also installs a `SessionStart` hook (`--no-hooks` to skip).
+6. **Verify** — writes a canary memory, reads it back, deletes it.
+
+Useful flags: `--dry-run` (report, change nothing), `--transport sse|stdio`,
+`--global` (user-level config instead of this repo's), `--workspace <slug>`,
+`--mcp-url`.
+
+Where each harness's config lands:
+
+| Harness | Path | Transport |
+|---|---|---|
+| Claude Code | `.mcp.json` (`~/.claude.json` with `--global`) | SSE or stdio |
+| Cursor | `.cursor/mcp.json` | SSE or stdio |
+| OpenCode | `opencode.json` | SSE or stdio |
+| Codex | `~/.codex/config.toml` | stdio only |
+
+Restart the agent. It now sees 16 tools: `remember`, `recall`,
 `search_memory`, `get_memory`, `list_memories`, `update_memory`,
 `delete_memory`, `link_memories`, `pin_memory`, `start_session`,
 `end_session`, `list_sessions`, `attach_file`, `finalize_attachment`,
@@ -178,7 +191,22 @@ Restart Claude Code. Your agent now sees 16 tools: `remember`, `recall`,
 
 ---
 
-## 9. Try the agentic recall path (optional)
+## 9. Check the install with `kortex doctor`
+
+```bash
+kortex doctor
+```
+
+Writes a canary memory, waits for it to be embedded, searches for it, and deletes it — so it
+fails loudly if the worker is down or the embedder cannot load, rather than leaving you to
+discover it when a recall comes back empty. Exits non-zero on failure.
+
+Use `kortex admin ingest-status` for the raw counters, and `kortex admin retry-embeddings` to
+requeue anything parked after failing.
+
+---
+
+## 10. Try the agentic recall path (optional)
 
 Export an Anthropic key and rerun the synthesize call:
 
@@ -192,7 +220,7 @@ You should see a structured answer with `[m:public_id]` citations and a
 
 ---
 
-## 10. Run the tests
+## 11. Run the tests
 
 ```bash
 make test-unit              # fast, process-local
