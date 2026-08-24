@@ -48,9 +48,7 @@ async def main() -> int:
         org_repo = OrgRepository(session, principal=sys_principal)
         org = await org_repo.get_by_slug(org_slug)
         if org is None:
-            org = await org_repo.create(
-                slug=org_slug, name=org_slug.capitalize(), plan="dev"
-            )
+            org = await org_repo.create(slug=org_slug, name=org_slug.capitalize(), plan="dev")
 
         org_principal = _superuser(org.id)
 

@@ -45,11 +45,10 @@ TENANT_BOUND_MODELS = {
 def _select_target_name(call: ast.Call) -> str | None:
     """If this is a ``select(Model)``/``select(Model.col)`` call, return ``Model``."""
     func = call.func
-    if isinstance(func, ast.Name) and func.id == "select":
-        pass
-    elif isinstance(func, ast.Attribute) and func.attr == "select":
-        pass
-    else:
+    is_select = (isinstance(func, ast.Name) and func.id == "select") or (
+        isinstance(func, ast.Attribute) and func.attr == "select"
+    )
+    if not is_select:
         return None
     if not call.args:
         return None

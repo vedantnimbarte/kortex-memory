@@ -62,7 +62,7 @@ async def _hammer(
     interval = 1.0 / max(1, rps)
     while time.monotonic() < deadline:
         start = time.monotonic()
-        q = random.choice(queries)  # noqa: S311 (no crypto need)
+        q = random.choice(queries)
         try:
             resp = await client.post(
                 "/v1/search/recall",
@@ -70,7 +70,7 @@ async def _hammer(
                 timeout=30.0,
             )
             resp.raise_for_status()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         elapsed = time.monotonic() - start
         samples.append(elapsed)
@@ -112,13 +112,13 @@ async def main() -> int:
     queries = _load_queries(args.query_file)
     headers = {"X-API-Key": api_key}
     async with httpx.AsyncClient(base_url=api_url, headers=headers) as client:
-        samples = await _hammer(
-            client, queries, args.rps, _parse_duration(args.duration)
-        )
+        samples = await _hammer(client, queries, args.rps, _parse_duration(args.duration))
 
     s = _summary(samples)
-    print("samples=%d p50=%.3fs p95=%.3fs p99=%.3fs max=%.3fs"
-          % (s.get("n", 0), s.get("p50", 0), s.get("p95", 0), s.get("p99", 0), s.get("max", 0)))
+    print(
+        f"samples={s.get('n', 0)} p50={s.get('p50', 0):.3f}s p95={s.get('p95', 0):.3f}s "
+        f"p99={s.get('p99', 0):.3f}s max={s.get('max', 0):.3f}s"
+    )
     # Non-zero exit if the SLO budget is busted.
     if s.get("p99", 0) > 1.2:
         return 1

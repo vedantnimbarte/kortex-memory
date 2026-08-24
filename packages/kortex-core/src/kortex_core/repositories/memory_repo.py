@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Select, and_, func, select, text, update
+from sqlalchemy import ColumnElement, Select, and_, func, select, text, update
 
 from kortex_core.db.types import (
     MemoryKind,
@@ -148,7 +148,7 @@ class MemoryRepository(BaseRepository[Memory]):
         ``max_sensitivity`` caps rows to what the caller may read (mirrors
         :meth:`list_`); ``None`` means unbounded (superuser).
         """
-        conds = [Memory.deleted_at.is_(None)]
+        conds: list[ColumnElement[bool]] = [Memory.deleted_at.is_(None)]
         if scope:
             conds += [
                 Memory.scope_type == scope.scope_type.value,
@@ -408,9 +408,11 @@ class MemoryRepository(BaseRepository[Memory]):
                       count(*) FILTER (
                         WHERE embedding IS NOT NULL AND embedding_model = :model
                       ) AS ok,
-                      COALESCE(EXTRACT(EPOCH FROM (now() - min(created_at))) FILTER (
+                      -- FILTER binds to the aggregate itself; wrapping the
+                      -- aggregate in EXTRACT first makes it a syntax error.
+                      COALESCE(EXTRACT(EPOCH FROM (now() - min(created_at) FILTER (
                         WHERE embedding IS NULL AND embed_failed_at IS NULL
-                      ), 0) AS oldest_pending_seconds
+                      ))), 0) AS oldest_pending_seconds
                     FROM memories
                     WHERE deleted_at IS NULL
                       {org_filter}
