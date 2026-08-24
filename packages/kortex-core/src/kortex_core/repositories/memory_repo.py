@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Select, and_, func, select, text, update
+from sqlalchemy import ColumnElement, Select, and_, func, select, text, update
 
 from kortex_core.db.types import (
     MemoryKind,
@@ -17,6 +17,7 @@ from kortex_core.db.types import (
     ScopeType,
     Sensitivity,
 )
+from kortex_core.embeddings.retry import decide_retry
 from kortex_core.models.memory import Memory
 from kortex_core.repositories.base import BaseRepository
 from kortex_core.retrieval.hybrid import HybridSearchHit, rrf_fuse
@@ -40,6 +41,16 @@ def _sensitivities_up_to(max_sensitivity: Sensitivity) -> list[str]:
 class ScopeFilter:
     scope_type: ScopeType
     scope_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class EmbedStatus:
+    """Write-path health: is anything stuck between `remember` and searchable?"""
+
+    pending: int
+    failed: int
+    ok: int
+    oldest_pending_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +148,7 @@ class MemoryRepository(BaseRepository[Memory]):
         ``max_sensitivity`` caps rows to what the caller may read (mirrors
         :meth:`list_`); ``None`` means unbounded (superuser).
         """
-        conds = [Memory.deleted_at.is_(None)]
+        conds: list[ColumnElement[bool]] = [Memory.deleted_at.is_(None)]
         if scope:
             conds += [
                 Memory.scope_type == scope.scope_type.value,
@@ -185,7 +196,9 @@ class MemoryRepository(BaseRepository[Memory]):
             )
         ).all()
         counts_by_day = {d.date(): int(c) for d, c in day_rows}
-        timeline = [counts_by_day.get((start + dt.timedelta(days=i)).date(), 0) for i in range(days)]
+        timeline = [
+            counts_by_day.get((start + dt.timedelta(days=i)).date(), 0) for i in range(days)
+        ]
 
         top_stmt = base(Memory).order_by(Memory.access_count.desc()).limit(top_n)
         top_accessed = list((await self._session.execute(top_stmt)).scalars().all())
@@ -268,22 +281,163 @@ class MemoryRepository(BaseRepository[Memory]):
     # ---- async embedding maintenance ----
 
     async def list_pending_embedding(self, *, limit: int = 64) -> list[Memory]:
+        """Memories eligible for an embedding attempt right now.
+
+        Excludes the two states that would otherwise spin forever: memories
+        parked after exhausting their retries, and memories still inside their
+        backoff window.
+        """
         s = get_settings()
+        now = dt.datetime.now(tz=dt.UTC)
         stmt = (
             self.tenant_query()
             .where(Memory.deleted_at.is_(None))
             .where((Memory.embedding.is_(None)) | (Memory.embedding_model != s.embedder_model))
+            .where(Memory.embed_failed_at.is_(None))
+            .where((Memory.embed_next_attempt_at.is_(None)) | (Memory.embed_next_attempt_at <= now))
             .order_by(Memory.created_at)
             .limit(limit)
         )
         return list((await self._session.execute(stmt)).scalars().all())
 
     async def set_embedding(self, memory_id: int, vector: list[float], model_id: str) -> None:
+        """Record a successful embedding, clearing any prior failure state."""
         await self._session.execute(
             update(Memory)
             .where(Memory.id == memory_id)
-            .values(embedding=vector, embedding_model=model_id)
+            .values(
+                embedding=vector,
+                embedding_model=model_id,
+                embed_attempts=0,
+                embed_error=None,
+                embed_failed_at=None,
+                embed_next_attempt_at=None,
+            )
         )
+
+    async def record_embed_failure(
+        self,
+        memory_ids: Sequence[int],
+        *,
+        error: str,
+        max_attempts: int,
+        retry_base_seconds: int,
+    ) -> int:
+        """Count an attempt against each memory, scheduling a retry or parking it.
+
+        Returns how many crossed into the failed state on this call — the number
+        worth alerting on, as opposed to the ones still being retried.
+        """
+        if not memory_ids:
+            return 0
+        now = dt.datetime.now(tz=dt.UTC)
+        ids = list(memory_ids)
+        rows = await self.list_by_ids(ids)
+        failed = 0
+        for memory in rows:
+            decision = decide_retry(
+                memory.embed_attempts,
+                max_attempts=max_attempts,
+                retry_base_seconds=retry_base_seconds,
+                now=now,
+            )
+            values: dict[str, Any] = {
+                "embed_attempts": decision.attempts,
+                "embed_error": error[:2000],
+                "embed_next_attempt_at": decision.next_attempt_at,
+            }
+            if decision.parked:
+                values["embed_failed_at"] = now
+                failed += 1
+            await self._session.execute(
+                update(Memory).where(Memory.id == memory.id).values(**values)
+            )
+        return failed
+
+    async def reset_embed_failures(self, *, org_id: int | None = None) -> int:
+        """Requeue parked memories. Returns how many were released.
+
+        Selects through ``tenant_query`` first rather than issuing a bare
+        UPDATE, so the org boundary comes from the same chokepoint as every
+        other read instead of a second hand-written filter.
+        """
+        select_stmt = (
+            self.tenant_query(Memory.id)
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.embed_failed_at.is_not(None))
+        )
+        if org_id is not None:
+            select_stmt = select_stmt.where(Memory.org_id == org_id)
+        ids = [int(row[0]) for row in (await self._session.execute(select_stmt)).all()]
+        if not ids:
+            return 0
+        await self._session.execute(
+            update(Memory)
+            .where(Memory.id.in_(ids))
+            .values(
+                embed_attempts=0,
+                embed_error=None,
+                embed_failed_at=None,
+                embed_next_attempt_at=None,
+            )
+        )
+        return len(ids)
+
+    async def embed_status_counts(self) -> EmbedStatus:
+        """One aggregate pass for the ingest-status endpoint and the gauges.
+
+        Org-scoped for ordinary principals: a tenant checking their own write
+        path must not learn how much of everyone else's is stuck. The metrics
+        exporter passes a superuser principal to get the fleet-wide totals.
+        """
+        s = get_settings()
+        params: dict[str, object] = {"model": s.embedder_model}
+        org_filter = ""
+        if not self.principal.is_superuser:
+            org_filter = "AND org_id = :org_id"
+            params["org_id"] = self.principal.org_id
+        row = (
+            await self._session.execute(
+                text(
+                    f"""
+                    SELECT
+                      count(*) FILTER (
+                        WHERE embedding IS NULL AND embed_failed_at IS NULL
+                      ) AS pending,
+                      count(*) FILTER (WHERE embed_failed_at IS NOT NULL) AS failed,
+                      count(*) FILTER (
+                        WHERE embedding IS NOT NULL AND embedding_model = :model
+                      ) AS ok,
+                      -- FILTER binds to the aggregate itself; wrapping the
+                      -- aggregate in EXTRACT first makes it a syntax error.
+                      COALESCE(EXTRACT(EPOCH FROM (now() - min(created_at) FILTER (
+                        WHERE embedding IS NULL AND embed_failed_at IS NULL
+                      ))), 0) AS oldest_pending_seconds
+                    FROM memories
+                    WHERE deleted_at IS NULL
+                      {org_filter}
+                    """
+                ),
+                params,
+            )
+        ).one()
+        return EmbedStatus(
+            pending=int(row[0]),
+            failed=int(row[1]),
+            ok=int(row[2]),
+            oldest_pending_seconds=float(row[3]),
+        )
+
+    async def list_embed_failures(self, *, limit: int = 20) -> list[Memory]:
+        """The parked memories themselves, newest failure first."""
+        stmt = (
+            self.tenant_query()
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.embed_failed_at.is_not(None))
+            .order_by(Memory.embed_failed_at.desc())
+            .limit(limit)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
 
     async def record_access(self, memory_ids: Sequence[int]) -> None:
         if not memory_ids:
@@ -349,6 +503,98 @@ class MemoryRepository(BaseRepository[Memory]):
         if new_tier is not None:
             values["tier"] = new_tier
         await self._session.execute(update(Memory).where(Memory.id == memory_id).values(**values))
+
+    # ---- conflict detection ----
+
+    async def list_pending_conflict_check(
+        self,
+        *,
+        kinds: Sequence[MemoryKind],
+        limit: int = 32,
+    ) -> list[Memory]:
+        """Embedded memories the conflict judge hasn't looked at yet.
+
+        Ordered newest-first: a fresh contradiction is worth surfacing before a
+        year-old one, and it keeps the initial backfill from starving live writes.
+        """
+        stmt = (
+            self.tenant_query()
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.conflict_checked_at.is_(None))
+            .where(Memory.embedding.is_not(None))
+            .where(Memory.kind.in_([k.value for k in kinds]))
+            .order_by(Memory.created_at.desc())
+            .limit(limit)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def mark_conflict_checked(self, memory_ids: Sequence[int]) -> None:
+        if not memory_ids:
+            return
+        await self._session.execute(
+            update(Memory)
+            .where(Memory.id.in_(list(memory_ids)))
+            .values(conflict_checked_at=dt.datetime.now(tz=dt.UTC))
+        )
+
+    async def list_conflict_candidates(
+        self,
+        memory: Memory,
+        *,
+        limit: int = 5,
+        min_similarity: float = 0.82,
+    ) -> list[tuple[Memory, float]]:
+        """Nearest neighbours that could plausibly conflict with ``memory``.
+
+        Narrowed hard on purpose — same org, same scope, same kind — because
+        every candidate costs an LLM judgement, and a fact only conflicts with
+        another fact about the same thing. Returns ``(memory, similarity)`` with
+        cosine similarity, highest first.
+        """
+        if memory.embedding is None:
+            return []
+        sql = text(
+            """
+            SELECT m.id, 1 - (m.embedding <=> CAST(:qv AS vector)) AS similarity
+            FROM memories m
+            WHERE m.deleted_at IS NULL
+              AND m.embedding IS NOT NULL
+              AND m.org_id = :org_id
+              AND m.scope_type = :scope_type
+              AND m.scope_id = :scope_id
+              AND m.kind = :kind
+              AND m.id <> :self_id
+            ORDER BY m.embedding <=> CAST(:qv AS vector) ASC
+            LIMIT :limit
+            """
+        )
+        rows = (
+            await self._session.execute(
+                sql,
+                {
+                    "qv": str(list(memory.embedding)),
+                    "org_id": memory.org_id,
+                    "scope_type": memory.scope_type,
+                    "scope_id": memory.scope_id,
+                    "kind": memory.kind,
+                    "self_id": memory.id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        scored = {int(r[0]): float(r[1]) for r in rows if float(r[1]) >= min_similarity}
+        if not scored:
+            return []
+        by_id = {m.id: m for m in await self.list_by_ids(list(scored))}
+        pairs = [(by_id[mid], sim) for mid, sim in scored.items() if mid in by_id]
+        pairs.sort(key=lambda pair: pair[1], reverse=True)
+        return pairs
+
+    async def list_by_ids(self, memory_ids: Sequence[int]) -> list[Memory]:
+        if not memory_ids:
+            return []
+        stmt = self.tenant_query().where(Memory.id.in_(list(memory_ids)))
+        return list((await self._session.execute(stmt)).scalars().all())
 
     async def list_for_consolidation(self, org_id: int, *, limit: int = 500) -> list[Memory]:
         """Mid-tier candidates for nightly clustering."""

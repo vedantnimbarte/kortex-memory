@@ -11,7 +11,7 @@ from kortex_core.security.plan_limits import (
 
 
 def test_known_plans() -> None:
-    assert max_memories("free") == 1_000
+    assert max_memories("free") == 25_000
     assert max_memories("pro") == 100_000
     assert max_memories("team") == 1_000_000
     assert max_workspaces("free") == 1

@@ -42,7 +42,7 @@ class Plan:
 # The catalog. Free is implicit (no Stripe price); paid plans map to a settings
 # price id resolved at checkout time.
 PLANS: list[Plan] = [
-    Plan("free", "Free", 0, ["1 workspace", "1k memories", "Community support"]),
+    Plan("free", "Free", 0, ["1 workspace", "25k memories", "Community support"]),
     Plan(
         "pro",
         "Pro",

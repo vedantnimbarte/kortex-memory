@@ -8,13 +8,13 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
+from kortex_core.models import Base
+from kortex_core.settings import get_settings
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from kortex_core.models import Base  # noqa: F401  (registers all tables)
-from kortex_core.settings import get_settings
+from alembic import context
 
 config = context.config
 
@@ -27,11 +27,9 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
-def _include_object(obj: object, name: str | None, type_: str, *_: object) -> bool:
+def _include_object(_obj: object, name: str | None, type_: str, *_rest: object) -> bool:
     # Skip pgvector internal types if Alembic introspects them.
-    if type_ == "table" and name and name.startswith("pg_"):
-        return False
-    return True
+    return not (type_ == "table" and name and name.startswith("pg_"))
 
 
 def run_migrations_offline() -> None:

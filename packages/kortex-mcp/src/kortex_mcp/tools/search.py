@@ -46,6 +46,7 @@ async def _search_memory(args: dict[str, Any]) -> dict[str, Any]:
                     "decay_score": h.decay_score,
                     "pinned": h.pinned,
                     "score": h.score,
+                    "conflicts": _conflicts(h),
                 }
                 for h in result.hits
             ],
@@ -81,6 +82,7 @@ async def _recall(args: dict[str, Any], *, synthesize: bool) -> dict[str, Any]:
                     "sensitivity": r.hit.sensitivity,
                     "final_score": r.final_score,
                     "rerank_score": r.rerank_score,
+                    "conflicts": _conflicts(r.hit),
                 }
                 for r in bundle.candidates
             ],
@@ -90,6 +92,20 @@ async def _recall(args: dict[str, Any], *, synthesize: bool) -> dict[str, Any]:
             "hops": bundle.hops,
             "stopped_reason": bundle.stopped_reason,
         }
+
+
+def _conflicts(hit: Any) -> list[dict[str, str]]:
+    """Conflicting memories, so the agent can see a fact has been superseded
+    instead of acting on the stale side. Surfaced, never resolved."""
+    return [
+        {
+            "public_id": c.public_id,
+            "title": c.title,
+            "relation": c.relation,
+            "created_at": c.created_at,
+        }
+        for c in hit.conflicts
+    ]
 
 
 def _scopes(args: dict[str, Any]) -> list[ScopeFilter] | None:
@@ -176,7 +192,10 @@ _SEARCH = ToolDef(
     name="search_memory",
     description=(
         "Hybrid retrieval over memories (pgvector + BM25, fused via RRF, "
-        "decay-weighted). Sensitivity is bounded by caller's max-sensitivity."
+        "decay-weighted). Sensitivity is bounded by caller's max-sensitivity. "
+        "Each hit carries `conflicts`: memories that supersede or contradict "
+        "it. A hit whose relation is `superseded_by` is the stale side — prefer "
+        "the memory named there."
     ),
     input_schema=_INPUT_SCHEMA,
     handler=_search_memory,

@@ -21,7 +21,7 @@ class PlanLimits:
 
 
 PLAN_LIMITS: dict[str, PlanLimits] = {
-    "free": PlanLimits(max_memories=1_000, max_workspaces=1),
+    "free": PlanLimits(max_memories=25_000, max_workspaces=1),
     "pro": PlanLimits(max_memories=100_000, max_workspaces=-1),
     "team": PlanLimits(max_memories=1_000_000, max_workspaces=-1),
 }

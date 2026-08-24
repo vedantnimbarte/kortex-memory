@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(QuotaExceededError, quota_exceeded_handler)
 
     # Prometheus scrape endpoint (dashboards + HPA custom-metric autoscaling).
-    app.add_route("/metrics", lambda _request: metrics_endpoint(), include_in_schema=False)
+    app.add_route("/metrics", metrics_endpoint, include_in_schema=False)
 
     # Distributed tracing: instrument the app so spans are emitted when OTel is
     # enabled (no-op provider otherwise). The dependency was already declared.

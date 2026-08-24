@@ -29,6 +29,26 @@ class ReindexIn(APIModel):
     batch_size: int = 64
 
 
+class EmbedFailureOut(APIModel):
+    public_id: str
+    title: str
+    attempts: int
+    error: str | None
+    failed_at: str
+
+
+class IngestStatusOut(APIModel):
+    """Write-path health. ``failed > 0`` means memories were accepted by the API
+    but never became searchable."""
+
+    pending: int
+    failed: int
+    ok: int
+    oldest_pending_seconds: float
+    max_attempts: int
+    recent_failures: list[EmbedFailureOut]
+
+
 def _dispatch(task_name: str, *args: Any) -> AdminTaskOut:
     try:
         from celery import current_app
@@ -104,3 +124,52 @@ async def force_consolidate(
     if org_id is not None:
         return _dispatch("kortex.consolidate.consolidate_tier_org", org_id)
     return _dispatch("kortex.consolidate.consolidate_tier")
+
+
+@router.get("/ingest-status", response_model=IngestStatusOut)
+async def ingest_status(principal: PrincipalDep, session: SessionDep) -> IngestStatusOut:
+    """Counts of memories that are searchable, still queued, or parked as failed.
+
+    Scoped to the caller's org unless they are a superuser, so a tenant can
+    check their own write path without seeing anyone else's.
+    """
+    from kortex_core.repositories.memory_repo import MemoryRepository
+    from kortex_core.settings import get_settings
+
+    repo = MemoryRepository(session, principal=principal)
+    counts = await repo.embed_status_counts()
+    failures = await repo.list_embed_failures(limit=20)
+    return IngestStatusOut(
+        pending=counts.pending,
+        failed=counts.failed,
+        ok=counts.ok,
+        oldest_pending_seconds=counts.oldest_pending_seconds,
+        max_attempts=get_settings().embed_max_attempts,
+        recent_failures=[
+            EmbedFailureOut(
+                public_id=str(m.public_id),
+                title=m.title,
+                attempts=m.embed_attempts,
+                error=m.embed_error,
+                failed_at=m.embed_failed_at.isoformat() if m.embed_failed_at else "",
+            )
+            for m in failures
+        ],
+    )
+
+
+@router.post(
+    "/retry_embeddings",
+    response_model=AdminTaskOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_embeddings(
+    principal: PrincipalDep, _session: SessionDep, org_id: int | None = None
+) -> AdminTaskOut:
+    """Release parked memories so ``embed_pending`` picks them up again.
+
+    Distinct from ``reindex_embeddings``, which throws away *every* vector: this
+    only touches the ones that failed.
+    """
+    _require_superuser(principal)
+    return _dispatch("kortex.embedding.retry_failed", org_id)

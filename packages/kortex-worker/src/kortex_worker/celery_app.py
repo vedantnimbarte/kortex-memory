@@ -18,6 +18,7 @@ def make_celery() -> Celery:
             "kortex_worker.tasks.embedding",
             "kortex_worker.tasks.attachments",
             "kortex_worker.tasks.decay",
+            "kortex_worker.tasks.conflict",
             "kortex_worker.tasks.consolidate",
             "kortex_worker.tasks.summary",
         ],
@@ -35,6 +36,7 @@ def make_celery() -> Celery:
         task_routes={
             "kortex.embedding.*": {"queue": "embed"},
             "kortex.decay.*": {"queue": "slow"},
+            "kortex.conflict.*": {"queue": "slow"},
             "kortex.consolidate.*": {"queue": "slow"},
             "kortex.summary.*": {"queue": "slow"},
             "kortex.attachment.*": {"queue": "default"},
@@ -48,6 +50,13 @@ def make_celery() -> Celery:
         "embed-pending": {
             "task": "kortex.embedding.embed_pending",
             "schedule": 30.0,
+        },
+        "conflict-detect": {
+            # Every 60s. The scan is a partial-index lookup that hits nothing
+            # when the queue is empty, so a tight cadence is cheap and keeps a
+            # contradiction from surviving more than a minute past its write.
+            "task": "kortex.conflict.detect_pending",
+            "schedule": 60.0,
         },
         "decay-tick": {
             # Every 6h, fan-out per-org from the task body.
