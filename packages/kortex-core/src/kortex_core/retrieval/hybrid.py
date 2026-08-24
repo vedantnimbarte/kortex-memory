@@ -7,7 +7,11 @@ database.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # annotation only — conflicts.py imports the repositories
+    from kortex_core.retrieval.conflicts import ConflictNote
 
 
 @dataclass(slots=True)
@@ -26,6 +30,11 @@ class HybridSearchHit:
     vector_distance: float | None = None  # cosine distance, lower = closer
     bm25_rank: float | None = None
     score: float = 0.0
+
+    conflicts: list[ConflictNote] = field(default_factory=list)
+    """Supersedes/contradicts edges touching this memory. Populated at
+    annotation time by :func:`kortex_core.retrieval.conflicts.annotate_conflicts`;
+    empty when nothing conflicts or detection is off."""
 
 
 def rrf_fuse(

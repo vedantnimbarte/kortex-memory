@@ -29,6 +29,7 @@ from kortex_core.llm.protocol import LLM, LlmError, LlmMessage
 from kortex_core.llm.registry import get_llm
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
 from kortex_core.retrieval.agent_loop import AgentLoop, AgentLoopResult
+from kortex_core.retrieval.conflicts import annotate_conflicts, demote_superseded
 from kortex_core.retrieval.hybrid import HybridSearchHit
 from kortex_core.retrieval.query_plan import (
     QueryPlan,
@@ -267,7 +268,16 @@ class AgenticRetriever:
             max_tokens=max_tokens,
             per_item_max=per_item_max,
         )
-        return kept
+        if not get_settings().conflict_detection:
+            return kept
+        # Both the agentic and fallback paths funnel through here, so annotating
+        # once covers every recall.
+        with span("kortex.retrieval.conflicts", candidates=len(kept)) as cs:
+            demoted = await annotate_conflicts(
+                self._session, self._principal, [r.hit for r in kept]
+            )
+            cs.set_attribute("demoted", len(demoted))
+        return demote_superseded(kept, demoted, key=lambda r: r.hit.memory_id)
 
     async def _synthesize(self, summarizer: LLM, query: str, bundle: list[RerankedHit]) -> str:
         s = get_settings()

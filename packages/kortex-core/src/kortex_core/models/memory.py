@@ -69,6 +69,22 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
             "expires_at",
             postgresql_where=text("expires_at IS NOT NULL"),
         ),
+        # The conflict scan runs every minute and is almost always empty; a
+        # partial index keeps it from touching the table at all.
+        # Operators need "how many are stuck" to be cheap; without this the
+        # ingest-status query is a seq scan on the largest table.
+        Index(
+            "ix_memories_embed_failed",
+            "embed_failed_at",
+            postgresql_where=text("embed_failed_at IS NOT NULL"),
+        ),
+        Index(
+            "ix_memories_conflict_pending",
+            "id",
+            postgresql_where=text(
+                "conflict_checked_at IS NULL AND embedding IS NOT NULL AND deleted_at IS NULL"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -119,6 +135,32 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         ),
         nullable=False,
     )
+
+    conflict_checked_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """When the conflict judge last looked at this memory. NULL = still queued."""
+
+    embed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embed_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Last embedding failure, kept so an operator can see *why* without log diving."""
+    embed_failed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Set once attempts are exhausted. Non-NULL means this memory is invisible to
+    vector search and nothing will retry it until someone asks."""
+    embed_next_attempt_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Backoff gate. NULL = eligible now."""
+
+    @property
+    def embedding_state(self) -> str:
+        """``ok`` | ``failed`` | ``pending`` — the honest answer to "is this
+        memory actually searchable?"."""
+        if self.embedding is not None:
+            return "ok"
+        return "failed" if self.embed_failed_at is not None else "pending"
 
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

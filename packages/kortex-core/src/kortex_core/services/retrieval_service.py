@@ -10,8 +10,10 @@ from kortex_core.db.types import Sensitivity
 from kortex_core.embeddings.protocol import EmbeddingError
 from kortex_core.embeddings.registry import get_embedder
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
+from kortex_core.retrieval.conflicts import annotate_conflicts, demote_superseded
 from kortex_core.retrieval.hybrid import HybridSearchHit
 from kortex_core.security.principal import Principal
+from kortex_core.settings import get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +39,7 @@ class RetrievalService:
     """
 
     def __init__(self, session: AsyncSession, principal: Principal):
+        self._session = session
         self._principal = principal
         self._memories = MemoryRepository(session, principal=principal)
 
@@ -61,6 +64,12 @@ class RetrievalService:
             max_sensitivity=max_sensitivity,
             limit=request.limit,
         )
+        # Surface stale/contradictory memories rather than quietly returning
+        # the loser of a superseded pair.
+        if get_settings().conflict_detection:
+            demoted = await annotate_conflicts(self._session, self._principal, hits)
+            hits = demote_superseded(hits, demoted, key=lambda h: h.memory_id)
+
         # Bookkeeping: bump access counters for what we returned.
         await self._memories.record_access([h.memory_id for h in hits])
         return SearchResult(hits=hits, used_vector=used_vector)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 
 from sqlalchemy import or_, select
 
@@ -51,6 +52,26 @@ class MemoryLinkRepository(BaseRepository[MemoryLink]):
         await self._session.delete(link)
         await self._session.flush()
         return True
+
+    async def conflict_links(self, memory_ids: Sequence[int]) -> list[MemoryLink]:
+        """Every supersedes/contradicts edge touching any of ``memory_ids``.
+
+        One query for a whole result page — recall annotates every hit, so a
+        per-hit lookup would turn one recall into N round trips.
+        """
+        if not memory_ids:
+            return []
+        ids = list(memory_ids)
+        stmt = select(MemoryLink).where(  # tenancy: ok - ids tenant-resolved upstream
+            MemoryLink.link_type.in_(
+                [MemoryLinkType.SUPERSEDES.value, MemoryLinkType.CONTRADICTS.value]
+            ),
+            or_(
+                MemoryLink.from_memory_id.in_(ids),
+                MemoryLink.to_memory_id.in_(ids),
+            ),
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
 
     async def neighbors(
         self,

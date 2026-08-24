@@ -19,6 +19,7 @@ from kortex_api.deps import PrincipalDep, SessionDep
 from kortex_api.errors import too_many_requests
 from kortex_api.schemas.search import (
     CitationOut,
+    ConflictNoteOut,
     ContextBundleOut,
     RecallCandidateOut,
     RecallIn,
@@ -60,6 +61,7 @@ async def search(payload: SearchIn, principal: PrincipalDep, session: SessionDep
                 decay_score=h.decay_score,
                 pinned=h.pinned,
                 score=h.score,
+                conflicts=_conflicts(h),
             )
             for h in result.hits
         ],
@@ -109,6 +111,7 @@ async def recall(
                 sensitivity=r.hit.sensitivity,
                 final_score=r.final_score,
                 rerank_score=r.rerank_score,
+                conflicts=_conflicts(r.hit),
             )
             for r in bundle.candidates
         ],
@@ -118,3 +121,16 @@ async def recall(
         hops=bundle.hops,
         stopped_reason=bundle.stopped_reason,
     )
+
+
+def _conflicts(hit: object) -> list[ConflictNoteOut]:
+    """Map core ``ConflictNote`` dataclasses onto the wire schema."""
+    return [
+        ConflictNoteOut(
+            public_id=c.public_id,
+            title=c.title,
+            relation=c.relation,
+            created_at=c.created_at,
+        )
+        for c in getattr(hit, "conflicts", [])
+    ]

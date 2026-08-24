@@ -20,6 +20,19 @@ class SearchIn(APIModel):
     embed_query: bool = True
 
 
+class ConflictNoteOut(APIModel):
+    """A memory that conflicts with the one carrying this note.
+
+    ``relation`` is stated from the annotated memory's point of view:
+    ``superseded_by`` means *this* memory is the stale side.
+    """
+
+    public_id: str
+    title: str
+    relation: str
+    created_at: str
+
+
 class SearchHitOut(APIModel):
     public_id: str
     title: str
@@ -30,6 +43,7 @@ class SearchHitOut(APIModel):
     decay_score: float
     pinned: bool
     score: float
+    conflicts: list[ConflictNoteOut] = Field(default_factory=list)
 
 
 class SearchOut(APIModel):
@@ -59,6 +73,7 @@ class RecallCandidateOut(APIModel):
     sensitivity: str
     final_score: float
     rerank_score: float
+    conflicts: list[ConflictNoteOut] = Field(default_factory=list)
 
 
 class ContextBundleOut(APIModel):
