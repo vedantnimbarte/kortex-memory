@@ -15,7 +15,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     marker previously hid ~2/3 of the unit suite from CI.)
     """
     for item in items:
-        path = str(item.fspath)
+        # Normalise separators: on Windows ``fspath`` is backslash-delimited, so the
+        # substring checks below silently matched nothing and ``-m unit`` selected
+        # only the handful of files carrying an explicit ``pytestmark``.
+        path = str(item.fspath).replace("\\", "/")
         if "/tests/unit/" in path:
             item.add_marker(pytest.mark.unit)
         elif "/tests/integration/" in path:

@@ -36,11 +36,21 @@ async def test_analytics_aggregates_full_set(session) -> None:  # type: ignore[n
         await session.flush()
 
     # 4 memories: varied tier / kind / decay / access / pin / created_at.
-    await make(tier="long", kind=MemoryKind.DECISION.value, decay_score=0.9, access_count=10, pinned=True)
+    await make(
+        tier="long",
+        kind=MemoryKind.DECISION.value,
+        decay_score=0.9,
+        access_count=10,
+        pinned=True,
+    )
     await make(tier="long", kind=MemoryKind.FACT.value, decay_score=0.5, access_count=3)
     await make(tier="short", kind=MemoryKind.FACT.value, decay_score=0.1, access_count=1)
-    await make(tier="mid", kind=MemoryKind.FACT.value, decay_score=0.5,
-               created_at=NOW - dt.timedelta(days=5))
+    await make(
+        tier="mid",
+        kind=MemoryKind.FACT.value,
+        decay_score=0.5,
+        created_at=NOW - dt.timedelta(days=5),
+    )
 
     a = await svc.analytics(now=NOW, scope=None, days=14)
 
@@ -69,7 +79,9 @@ async def test_analytics_scope_filter(session) -> None:  # type: ignore[no-untyp
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     svc = MemoryService(session, principal)
     await svc.create(CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body="in"))
-    await svc.create(CreateMemoryInput(scope_type=ScopeType.ORG, scope_id=principal.org_id, body="out"))
+    await svc.create(
+        CreateMemoryInput(scope_type=ScopeType.ORG, scope_id=principal.org_id, body="out")
+    )
 
     from kortex_core.repositories.memory_repo import ScopeFilter
 
