@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kortex_core.db.base import Base
 from kortex_core.db.types import AttachmentStatus, Sensitivity
+from kortex_core.embeddings.dimensions import EMBEDDING_DIM
 from kortex_core.models.mixins import PublicIdMixin, SoftDeleteMixin, TimestampMixin
 from kortex_core.models.user import scope_type_enum
 
@@ -121,7 +122,7 @@ class AttachmentChunk(Base, TimestampMixin):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     tsv: Mapped[str] = mapped_column(

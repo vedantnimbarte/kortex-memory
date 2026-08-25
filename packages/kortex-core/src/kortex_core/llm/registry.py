@@ -22,7 +22,7 @@ def get_llm(name: str | None = None) -> LLM:
     if name not in _factories:
         _bootstrap_default_factories()
     if name not in _factories:
-        raise KeyError(f"unknown llm provider: {name}")
+        raise KeyError(f"unknown llm provider {name!r}; available: {', '.join(sorted(_factories))}")
     instance = _factories[name]()
     _singletons[name] = instance
     return instance
@@ -31,6 +31,12 @@ def get_llm(name: str | None = None) -> LLM:
 def reset() -> None:
     """Drop singleton cache (tests only)."""
     _singletons.clear()
+
+
+def available_providers() -> list[str]:
+    """Registered LLM provider names, bootstrapping the defaults if needed."""
+    _bootstrap_default_factories()
+    return sorted(_factories)
 
 
 def _bootstrap_default_factories() -> None:
@@ -50,3 +56,7 @@ def _bootstrap_default_factories() -> None:
         from kortex_core.llm.ollama import OllamaLLM
 
         _factories["ollama"] = lambda: OllamaLLM()
+    if "bedrock" not in _factories:
+        from kortex_core.llm.bedrock import BedrockLLM
+
+        _factories["bedrock"] = lambda: BedrockLLM()

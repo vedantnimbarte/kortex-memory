@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kortex_core.db.base import Base
 from kortex_core.db.types import AgentKind, MessageRole
+from kortex_core.embeddings.dimensions import EMBEDDING_DIM
 from kortex_core.models.mixins import PublicIdMixin, TimestampMixin
 
 if TYPE_CHECKING:
@@ -76,7 +77,9 @@ class Conversation(Base, PublicIdMixin, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    summary_embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+    summary_embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIM), nullable=True
+    )
 
     session: Mapped[Session] = relationship(back_populates="conversations")
     messages: Mapped[list[Message]] = relationship(
