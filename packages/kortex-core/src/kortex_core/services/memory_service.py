@@ -31,6 +31,7 @@ from kortex_core.repositories.memory_repo import (
 )
 from kortex_core.repositories.org_repo import OrgRepository
 from kortex_core.repositories.project_repo import ProjectRepository
+from kortex_core.retrieval.text_search import DEFAULT_TS_CONFIG
 from kortex_core.security.plan_limits import QuotaExceededError, max_memories
 from kortex_core.security.principal import Principal, ScopeRef
 from kortex_core.services.access_control import AccessControl, ResourceRef
@@ -102,7 +103,10 @@ class MemoryService:
         # don't re-query the org/count per created memory.
         self._org_plan: str | None = None
         self._mem_count: int | None = None
-        self._review_modes: dict[int, ReviewMode] | None = None
+        # Per-project settings the write path needs, cached across a batch:
+        # the gating mode and the text-search configuration, resolved with
+        # one project lookup rather than two.
+        self._project_settings: dict[int, tuple[ReviewMode, str]] = {}
 
     def _require_scope(self, name: str) -> None:
         """Enforce API-key scopes (no-op for users, whose key_scopes is empty)."""
@@ -129,23 +133,26 @@ class MemoryService:
             )
         self._mem_count += 1
 
-    async def _review_mode(self, payload: CreateMemoryInput) -> ReviewMode:
-        """Gating is a per-project setting; anything not in a project is ungated.
+    async def _project_config(self, payload: CreateMemoryInput) -> tuple[ReviewMode, str]:
+        """Gating mode and text-search configuration for the target project.
 
-        Cached per service instance so a batch ingest resolves it once rather
-        than per memory.
+        Both are per-project settings; anything not in a project is ungated and
+        analysed with the default configuration. Cached per service instance so
+        a batch ingest resolves the project once rather than per memory.
         """
         if payload.scope_type is not ScopeType.PROJECT:
-            return ReviewMode.OFF
-        if self._review_modes is None:
-            self._review_modes = {}
-        cached = self._review_modes.get(payload.scope_id)
+            return ReviewMode.OFF, DEFAULT_TS_CONFIG
+        cached = self._project_settings.get(payload.scope_id)
         if cached is None:
             project = await ProjectRepository(self._session, principal=self._principal).get_by_id(
                 payload.scope_id
             )
-            cached = ReviewMode(project.review_mode) if project else ReviewMode.OFF
-            self._review_modes[payload.scope_id] = cached
+            cached = (
+                (ReviewMode(project.review_mode), project.text_search_config)
+                if project
+                else (ReviewMode.OFF, DEFAULT_TS_CONFIG)
+            )
+            self._project_settings[payload.scope_id] = cached
         return cached
 
     async def review(
@@ -271,13 +278,14 @@ class MemoryService:
                     kinds=sorted(findings),
                 )
 
+        review_mode, ts_config = await self._project_config(payload)
         verdict = (
             should_quarantine(trust=trust, text=f"{title}\n{body}")
             if settings.injection_quarantine
             else InjectionVerdict(suspicious=False)
         )
         review = decide_review(
-            mode=await self._review_mode(payload),
+            mode=review_mode,
             confidence=payload.confidence,
             threshold=settings.review_confidence_threshold,
             suspicious_reason=verdict.reason if verdict.suspicious else "",
@@ -343,6 +351,7 @@ class MemoryService:
             review_status=review.status.value,
             review_reason=review.reason or None,
             confidence=payload.confidence,
+            ts_config=ts_config,
         )
         return MemoryWrite(
             memory=created,

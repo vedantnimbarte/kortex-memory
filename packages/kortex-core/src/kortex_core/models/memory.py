@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, REGCONFIG, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kortex_core.db.base import Base
@@ -162,10 +162,27 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    ts_config: Mapped[str] = mapped_column(
+        REGCONFIG,
+        nullable=False,
+        server_default=text("'english'::regconfig"),
+    )
+    """Which Postgres text-search configuration analyses this row.
+
+    Typed ``regconfig`` rather than text on purpose: ``to_tsvector(regconfig,
+    text)`` is IMMUTABLE and so may drive a generated column, while
+    ``to_tsvector(text::regconfig, text)`` is not — the cast does a catalog
+    lookup. That single detail is what lets the tsvector stay generated instead
+    of needing a trigger.
+
+    Denormalised from the owning project so the generation expression can reach
+    it: a generated column may only reference its own row.
+    """
+
     tsv: Mapped[str] = mapped_column(
         TSVECTOR,
         Computed(
-            "to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''))",
+            "to_tsvector(ts_config, coalesce(title,'') || ' ' || coalesce(body,''))",
             persisted=True,
         ),
         nullable=False,

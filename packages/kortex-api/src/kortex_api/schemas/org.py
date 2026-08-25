@@ -44,9 +44,19 @@ class ProjectReviewIn(APIModel):
     review_mode: Literal["off", "low_confidence", "all"]
 
 
+class ProjectTextSearchIn(APIModel):
+    text_search_config: str = Field(min_length=1, max_length=64, pattern=r"^[a-z_][a-z0-9_]*$")
+    """A Postgres text-search configuration name: ``english``, ``french``,
+    ``simple``, and so on. Checked against the ones this server actually has
+    before it is stored -- an unrecognised name would make every subsequent
+    search in the project raise rather than return nothing."""
+
+
 class ProjectOut(TimestampedOut):
     id: int
     slug: str
     name: str
     review_mode: str = "off"
     """Whether writes here wait for a human: off, low_confidence, or all."""
+    text_search_config: str = "english"
+    """Postgres text-search configuration used to stem this project's text."""

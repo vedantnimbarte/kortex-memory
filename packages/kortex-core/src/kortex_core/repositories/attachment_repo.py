@@ -14,6 +14,7 @@ from kortex_core.models.attachment import Attachment, AttachmentChunk
 from kortex_core.repositories.base import BaseRepository
 from kortex_core.repositories.memory_repo import ScopeFilter, _sensitivities_up_to
 from kortex_core.retrieval.hybrid import rrf_fuse
+from kortex_core.retrieval.text_search import DEFAULT_TS_CONFIG, config_for_scopes
 from kortex_core.settings import get_settings
 
 
@@ -160,6 +161,7 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
         chunks: Sequence[tuple[int, str]],
         embeddings: Sequence[list[float] | None] | None = None,
         embedding_model: str | None = None,
+        ts_config: str = DEFAULT_TS_CONFIG,
     ) -> int:
         """Insert chunks; ``embeddings`` may be ``None`` for deferred embedding."""
         org_id = self.principal.org_id
@@ -174,6 +176,7 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
                     content=content,
                     embedding=vec,
                     embedding_model=embedding_model if vec is not None else None,
+                    ts_config=ts_config,
                 )
             )
         if not rows:
@@ -186,6 +189,40 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
         await self._session.execute(
             text("DELETE FROM attachment_chunks WHERE attachment_id = :aid"),
             {"aid": attachment_id},
+        )
+
+    async def reanalyse_scope(
+        self,
+        *,
+        scope_type: ScopeType,
+        scope_id: int,
+        ts_config: str,
+    ) -> None:
+        """Re-stem every chunk under a scope, matching its memories.
+
+        Chunks carry no scope of their own -- they inherit the attachment's --
+        so this joins rather than filtering directly. Leaving them out would
+        give a project two halves analysed differently and nothing to say which
+        results came from which.
+        """
+        await self._session.execute(
+            text(
+                """
+                UPDATE attachment_chunks c
+                SET ts_config = CAST(:cfg AS regconfig)
+                FROM attachments a
+                WHERE a.id = c.attachment_id
+                  AND a.org_id = :org_id
+                  AND a.scope_type = :st
+                  AND a.scope_id = :sid
+                """
+            ),
+            {
+                "cfg": ts_config,
+                "org_id": self.principal.org_id,
+                "st": scope_type.value,
+                "sid": scope_id,
+            },
         )
 
     async def hybrid_search(
@@ -206,7 +243,9 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
         principal = self.principal
 
         org_filter_sql = ""
-        params: dict[str, object] = {}
+        params: dict[str, object] = {
+            "ts_config": await config_for_scopes(self._session, principal, scopes)
+        }
         if not principal.is_superuser:
             org_filter_sql = "AND a.org_id = :org_id"
             params["org_id"] = principal.org_id
@@ -259,11 +298,11 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
         b_sql = text(
             f"""
             SELECT c.id,
-                   ts_rank_cd(c.tsv, plainto_tsquery('english', :q)) AS rank
+                   ts_rank_cd(c.tsv, plainto_tsquery(CAST(:ts_config AS regconfig), :q)) AS rank
             FROM attachment_chunks c
             JOIN attachments a ON a.id = c.attachment_id
             WHERE a.deleted_at IS NULL
-              AND c.tsv @@ plainto_tsquery('english', :q)
+              AND c.tsv @@ plainto_tsquery(CAST(:ts_config AS regconfig), :q)
               AND a.sensitivity IN ({sens_placeholders})
               {org_filter_sql}
               {scope_filter_sql}
