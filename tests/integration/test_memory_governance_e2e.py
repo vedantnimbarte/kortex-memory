@@ -2,7 +2,7 @@
 and does retrieval actually honour it.
 
 The unit tests pin the detectors. These pin the part that makes them worth
-having — a quarantined memory must be unreachable through *every* retrieval
+having — a held memory must be unreachable through *every* retrieval
 path, not just the one that was remembered when the filter was written. A
 governance control that one query shape can walk around is not a control.
 """
@@ -10,7 +10,13 @@ governance control that one query shape can walk around is not a control.
 from __future__ import annotations
 
 import pytest
-from kortex_core.db.types import MemoryKind, MemorySource, ScopeType, Sensitivity
+from kortex_core.db.types import (
+    MemoryKind,
+    MemorySource,
+    ReviewStatus,
+    ScopeType,
+    Sensitivity,
+)
 from kortex_core.repositories.memory_repo import MemoryRepository
 from kortex_core.services.auth_service import AuthService
 from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
@@ -96,7 +102,7 @@ async def test_clean_content_is_untouched(session) -> None:  # type: ignore[no-u
     result = await svc.write(_payload(ws.id, "The job queue runs on Celery."))
 
     assert result.pii_flags == {}
-    assert result.quarantined is False
+    assert result.pending_review is False
     assert result.memory.trust == "high"  # MANUAL is the default source
 
 
@@ -152,10 +158,10 @@ async def test_low_trust_is_withheld_from_sensitive_recall(session) -> None:  # 
     assert {h.memory_id for h in sensitive} == {trusted.memory.id}
 
 
-# --- quarantine -------------------------------------------------------------
+# --- holding for review -------------------------------------------------------------
 
 
-async def test_injection_from_a_low_trust_source_is_quarantined(session) -> None:  # type: ignore[no-untyped-def]
+async def test_injection_from_a_low_trust_source_is_held(session) -> None:  # type: ignore[no-untyped-def]
     """The acceptance case: stored injection must not be re-injected."""
     principal = await _owner(session, "gov7@acme.io", "Gov Co 7")
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
@@ -163,12 +169,12 @@ async def test_injection_from_a_low_trust_source_is_quarantined(session) -> None
 
     result = await svc.write(_payload(ws.id, INJECTION, source_type=MemorySource.TOOL_OUTPUT))
 
-    assert result.quarantined is True
-    assert result.memory.quarantined_at is not None
-    assert "override_instructions" in (result.memory.quarantine_reason or "")
+    assert result.pending_review is True
+    assert result.memory.review_status == "pending"
+    assert "override_instructions" in (result.memory.review_reason or "")
 
 
-async def test_a_quarantined_memory_is_unreachable_through_every_path(session) -> None:  # type: ignore[no-untyped-def]
+async def test_a_held_memory_is_unreachable_through_every_path(session) -> None:  # type: ignore[no-untyped-def]
     """One query shape walking around the filter would make it decorative."""
     principal = await _owner(session, "gov8@acme.io", "Gov Co 8")
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
@@ -185,20 +191,20 @@ async def test_a_quarantined_memory_is_unreachable_through_every_path(session) -
     assert poisoned.memory.id not in {m.id for m in listed}, "leaked via list_"
 
 
-async def test_the_same_text_from_a_person_is_not_quarantined(session) -> None:  # type: ignore[no-untyped-def]
+async def test_the_same_text_from_a_person_is_not_held(session) -> None:  # type: ignore[no-untyped-def]
     """Someone documenting an attack in their own notes is not launching one —
-    and quarantining that would make this useless to security teams."""
+    and holding it would make this useless to security teams."""
     principal = await _owner(session, "gov9@acme.io", "Gov Co 9")
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     svc = MemoryService(session, principal)
 
     result = await svc.write(_payload(ws.id, INJECTION, source_type=MemorySource.MANUAL))
 
-    assert result.quarantined is False
-    assert result.memory.quarantined_at is None
+    assert result.pending_review is False
+    assert result.memory.review_status == "approved"
 
 
-async def test_ordinary_fetched_content_is_not_quarantined(session) -> None:  # type: ignore[no-untyped-def]
+async def test_ordinary_fetched_content_is_not_held(session) -> None:  # type: ignore[no-untyped-def]
     principal = await _owner(session, "gov10@acme.io", "Gov Co 10")
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     svc = MemoryService(session, principal)
@@ -211,11 +217,11 @@ async def test_ordinary_fetched_content_is_not_quarantined(session) -> None:  # 
         )
     )
 
-    assert result.quarantined is False
+    assert result.pending_review is False
     assert result.memory.trust == "low"  # still low trust, just not hostile
 
 
-async def test_release_puts_a_reviewed_memory_back(session) -> None:  # type: ignore[no-untyped-def]
+async def test_approval_puts_a_reviewed_memory_back(session) -> None:  # type: ignore[no-untyped-def]
     principal = await _owner(session, "gov11@acme.io", "Gov Co 11")
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     svc = MemoryService(session, principal)
@@ -224,13 +230,15 @@ async def test_release_puts_a_reviewed_memory_back(session) -> None:  # type: ig
     poisoned = await svc.write(_payload(ws.id, INJECTION, source_type=MemorySource.TOOL_OUTPUT))
     await session.flush()
 
-    quarantined = await repo.list_quarantined()
-    assert [m.id for m in quarantined] == [poisoned.memory.id]
+    held = await repo.list_pending_review()
+    assert [m.id for m in held] == [poisoned.memory.id]
 
-    await repo.release_quarantine(quarantined[0])
+    await repo.set_review_status(
+        held[0], status=ReviewStatus.APPROVED, reviewer_id=principal.actor_id
+    )
     await session.flush()
 
-    assert await repo.list_quarantined() == []
+    assert await repo.list_pending_review() == []
     listed = await repo.list_(limit=50)
     assert poisoned.memory.id in {m.id for m in listed}
 
@@ -247,7 +255,7 @@ async def test_governance_can_be_turned_off(session, monkeypatch) -> None:  # ty
     )
 
     assert result.pii_flags == {}
-    assert result.quarantined is False
+    assert result.pending_review is False
 
 
 async def test_redaction_happens_before_the_dedup_fingerprint(session, monkeypatch) -> None:  # type: ignore[no-untyped-def]

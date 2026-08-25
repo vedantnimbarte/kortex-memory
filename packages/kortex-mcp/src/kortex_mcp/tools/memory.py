@@ -41,6 +41,7 @@ def _memory_out(m: Memory) -> dict[str, Any]:
         "last_accessed_at": m.last_accessed_at,
         "expires_at": m.expires_at,
         "trust": m.trust,
+        "review_status": m.review_status,
         "metadata": m.metadata_,
     }
 
@@ -78,6 +79,9 @@ async def _remember(args: dict[str, Any]) -> dict[str, Any]:
                 importance=float(args.get("importance", 0.5)),
                 pinned=bool(args.get("pinned", False)),
                 metadata=args.get("metadata"),
+                confidence=(
+                    float(args["confidence"]) if args.get("confidence") is not None else None
+                ),
             ),
             embed_inline=bool(args.get("embed_inline", False)),
             force=bool(args.get("force", False)),
@@ -85,7 +89,8 @@ async def _remember(args: dict[str, Any]) -> dict[str, Any]:
         return {
             **_memory_out(result.memory),
             "deduped": result.deduped,
-            "quarantined": result.quarantined,
+            "pending_review": result.pending_review,
+            "review_reason": result.review_reason,
             "pii_flags": result.pii_flags,
         }
 
@@ -96,9 +101,10 @@ _REMEMBER = ToolDef(
         "Store a new atomic memory (fact, preference, decision, etc.) at a "
         "given scope. Writing the same content twice returns the existing "
         "memory with `deduped: true` instead of storing a copy. Content from "
-        "low-trust sources that reads as instructions to a model is quarantined "
-        "(`quarantined: true`) and will not appear in any recall until an "
-        "operator releases it. "
+        "low-trust sources that reads as instructions to a model, and writes "
+        "below a project's confidence threshold, are held for review "
+        "(`pending_review: true`) and will not appear in any recall until "
+        "someone approves them. "
         "The memory is embedded asynchronously by the worker; pass "
         "embed_inline=true to embed during the call (slower, useful for tests)."
     ),
@@ -134,6 +140,17 @@ _REMEMBER = ToolDef(
             "pinned": {"type": "boolean", "default": False},
             "metadata": {"type": ["object", "null"], "default": None},
             "embed_inline": {"type": "boolean", "default": False},
+            "confidence": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 1,
+                "default": None,
+                "description": (
+                    "How sure you are of this, 0-1. Omit if you are certain. "
+                    "Projects configured for review hold low-confidence writes "
+                    "for a human, and the response says so via `pending_review`."
+                ),
+            },
             "force": {
                 "type": "boolean",
                 "default": False,

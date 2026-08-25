@@ -32,6 +32,9 @@ class MemoryIn(APIModel):
     pinned: bool = False
     metadata: dict = Field(default_factory=dict)
     expires_at: dt.datetime | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    """Your own certainty. Projects in `low_confidence` review mode hold writes
+    below the threshold for a human to look at."""
 
 
 class MemoryOut(APIModel):
@@ -57,8 +60,10 @@ class MemoryOut(APIModel):
     at confidential/secret sensitivity."""
     pii_flags: dict = Field(default_factory=dict)
     """Counts by kind of personal/secret data found at write time. Never values."""
-    quarantined: bool = False
-    """Withheld from every retrieval path pending operator review."""
+    review_status: Literal["approved", "pending", "rejected"] = "approved"
+    """Only ``approved`` is retrievable."""
+    review_reason: str | None = None
+    confidence: float | None = None
     deduped: bool = False
     """True when this write folded into an existing identical memory rather
     than creating a new one. Only ever set on a create response."""

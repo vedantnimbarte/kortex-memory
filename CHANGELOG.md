@@ -107,10 +107,19 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
     restricts reads). `pii_flags` stores counts by kind, never values.
   - Memories get a `trust` level from `source_type`. Low-trust content — fetched documents, tool
     output — is withheld from recalls made at confidential/secret sensitivity.
-  - Low-trust content that reads as instructions to a model is **quarantined**: stored, but absent
-    from every retrieval path until an operator releases it via `GET /v1/admin/quarantine` and
-    `POST /v1/admin/quarantine/{id}/release`. Only low-trust content is scanned, so a person
-    documenting an attack in their own notes is not quarantined for it.
+  - Low-trust content that reads as instructions to a model is **held for review**: stored, but
+    absent from every retrieval path until someone approves it. Only low-trust content is scanned,
+    so a person documenting an attack in their own notes is not held for it.
+
+- **Write-gating and a review queue.** Memories can now be held out of recall until a person
+  approves them, with one queue for both reasons they might be: a low-trust write that reads as
+  instructions to a model, or a write a project chose to gate. `remember` takes an optional
+  `confidence`, projects take a `review_mode` (`off` by default, or `low_confidence` / `all`), and
+  the response says `pending_review` when a write was held. Reviewing lives at `GET /v1/review`,
+  `POST /v1/review/{id}/approve|reject`, and `POST /v1/review/bulk`, and in the console at
+  `/app/review` — which shows why each memory was held and what it resembles among already-approved
+  ones, because the decision is usually "new fact, or fourth restatement". Every decision writes an
+  audit row naming the reviewer.
 
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.

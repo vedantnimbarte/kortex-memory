@@ -92,3 +92,48 @@ tick. It does **not** touch successful vectors — that is `reindex-embeddings`,
 every embedding and re-embeds the entire corpus.
 
 Confirm with `kortex doctor` before closing the incident.
+
+## The review queue is not empty
+
+Memories in the queue are **stored but invisible to recall**. An agent asking
+about something held here will be told nothing is known about it.
+
+```bash
+curl -s "$KORTEX_API_URL/v1/review" -H "X-API-Key: $KORTEX_API_KEY" | jq '.total'
+```
+
+Or open `/app/review` in the console, which shows each held memory with why it
+was held and what it resembles among already-approved memories.
+
+### Why something is there
+
+| `review_reason` | Meaning | Usually |
+|---|---|---|
+| `override_instructions`, `role_reassignment`, `system_prompt_probe`, `exfiltration`, `concealment` | Low-trust content matched a prompt-injection heuristic | A fetched page or tool output containing text aimed at the model |
+| `project reviews every write` | The project's `review_mode` is `all` | Deliberate |
+| `confidence N below the M threshold` | `review_mode` is `low_confidence` and the writer said it was unsure | Deliberate |
+
+### Clearing it
+
+Approve or reject per item, or in batches of explicit ids. There is no
+"approve everything" — clearing a queue you have not read is the failure mode
+review exists to prevent.
+
+Rejected memories are kept, not deleted: what an agent tried to store and why
+it was refused is the evidence worth having after a poisoning attempt.
+
+Every decision writes an audit row (`memory.review.approved` /
+`memory.review.rejected`) recording who made it.
+
+### Turning gating off
+
+```bash
+curl -X PATCH "$KORTEX_API_URL/v1/projects/$PROJECT_ID/review-mode" \
+  -H "X-API-Key: $KORTEX_API_KEY" -H 'content-type: application/json' \
+  -d '{"review_mode": "off"}'
+```
+
+This stops *quality* gating only. Suspicious low-trust content is still held —
+that is a security control and does not follow the project's preference. Use
+`KORTEX_INJECTION_QUARANTINE=false` to disable that too, and understand what
+you are turning off first.

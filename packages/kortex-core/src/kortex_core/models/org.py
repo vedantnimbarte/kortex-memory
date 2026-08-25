@@ -5,14 +5,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, ForeignKey, Index, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kortex_core.db.base import Base
+from kortex_core.db.types import ReviewMode
 from kortex_core.models.mixins import PublicIdMixin, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from kortex_core.models.api_key import ApiKey
+
+
+review_mode_enum = ENUM(
+    *[m.value for m in ReviewMode],
+    name="review_mode",
+    create_type=False,
+)
 
 
 class Org(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
@@ -68,6 +76,10 @@ class Project(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    review_mode: Mapped[str] = mapped_column(
+        review_mode_enum, nullable=False, default=ReviewMode.OFF.value
+    )
+    """Whether writes to this project wait for a human. Off by default."""
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 

@@ -28,6 +28,7 @@ from kortex_core.db.types import (
     MemorySource,
     MemoryTier,
     MemoryTrust,
+    ReviewStatus,
     Sensitivity,
 )
 from kortex_core.embeddings.dimensions import EMBEDDING_DIM
@@ -54,6 +55,12 @@ memory_source_enum = ENUM(
     name="memory_source",
     create_type=False,
 )
+review_status_enum = ENUM(
+    *[r.value for r in ReviewStatus],
+    name="review_status",
+    create_type=False,
+)
+
 memory_trust_enum = ENUM(
     *[t.value for t in MemoryTrust],
     name="memory_trust",
@@ -81,11 +88,13 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         # partial index keeps it from touching the table at all.
         # Quarantined memories are rare, and an operator listing them should
         # not seq-scan the largest table to find them.
+        # The review inbox reads this on every page load; without the index it
+        # is a seq scan of the largest table to find a handful of rows.
         Index(
-            "ix_memories_quarantined",
+            "ix_memories_review_pending",
             "org_id",
-            "quarantined_at",
-            postgresql_where=text("quarantined_at IS NOT NULL"),
+            "review_status",
+            postgresql_where=text("review_status = 'pending'"),
         ),
         # Dedup looks up by (tenant, scope, fingerprint) on every write, so it
         # has to be indexed or it is a seq scan per memory created.
@@ -170,12 +179,18 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
     pii_flags: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     """Counts by kind, never the matched values — a column holding the secrets
     it found would be a worse leak than the one it reports."""
-    quarantined_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    review_status: Mapped[str] = mapped_column(
+        review_status_enum, nullable=False, default=ReviewStatus.APPROVED.value
     )
-    """Set when low-trust content reads as instructions to the model. Excluded
-    from every retrieval path until an operator releases it."""
-    quarantine_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    """Only ``approved`` is retrievable. Covers both held-for-suspicion and
+    held-for-low-confidence — one queue, because the outcome is the same."""
+    review_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    """What the writer claimed about its own certainty. NULL means it did not say."""
 
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     """SHA-256 of the normalised title+body, used to fold away verbatim

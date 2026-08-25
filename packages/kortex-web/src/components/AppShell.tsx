@@ -12,6 +12,7 @@ const NAV: { to: string; label: string; end?: boolean }[] = [
   { to: "/app/recall", label: "Recall" },
   { to: "/app/search", label: "Search" },
   { to: "/app/memories", label: "Memories" },
+  { to: "/app/review", label: "Review" },
   { to: "/app/activity", label: "Activity" },
   { to: "/app/attachments", label: "Attachments" },
   { to: "/app/ingest", label: "Ingest" },

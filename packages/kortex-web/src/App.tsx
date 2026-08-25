@@ -15,6 +15,7 @@ import DashboardPage from "./pages/DashboardPage";
 import RecallPage from "./pages/RecallPage";
 import SearchPage from "./pages/SearchPage";
 import MemoriesPage from "./pages/MemoriesPage";
+import ReviewPage from "./pages/ReviewPage";
 import MemoryDetailPage from "./pages/MemoryDetailPage";
 import ActivityPage from "./pages/ActivityPage";
 import AttachmentsPage from "./pages/AttachmentsPage";
@@ -69,6 +70,7 @@ export default function App() {
                 <Route path="search" element={<SearchPage />} />
                 <Route path="memories" element={<MemoriesPage />} />
                 <Route path="memories/:id" element={<MemoryDetailPage />} />
+                <Route path="review" element={<ReviewPage />} />
                 <Route path="activity" element={<ActivityPage />} />
                 <Route path="attachments" element={<AttachmentsPage />} />
                 <Route path="ingest" element={<IngestPage />} />

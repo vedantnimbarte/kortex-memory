@@ -14,12 +14,15 @@ from kortex_core.db.types import (
     MemoryLinkType,
     MemorySource,
     MemoryTier,
+    ReviewMode,
+    ReviewStatus,
     ScopeType,
     Sensitivity,
 )
 from kortex_core.dedup import content_hash
 from kortex_core.embeddings.registry import get_embedder
 from kortex_core.models.memory import Memory, MemoryLink
+from kortex_core.repositories.audit_repo import AuditRepository
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
 from kortex_core.repositories.memory_repo import (
     MemoryAnalytics,
@@ -27,6 +30,7 @@ from kortex_core.repositories.memory_repo import (
     ScopeFilter,
 )
 from kortex_core.repositories.org_repo import OrgRepository
+from kortex_core.repositories.project_repo import ProjectRepository
 from kortex_core.security.plan_limits import QuotaExceededError, max_memories
 from kortex_core.security.principal import Principal, ScopeRef
 from kortex_core.services.access_control import AccessControl, ResourceRef
@@ -34,6 +38,7 @@ from kortex_core.services.access_control import AccessDeniedError as _AccessDeni
 from kortex_core.settings import get_settings
 from kortex_core.skills.pii_detector import get_pii_detector, summarise
 from kortex_core.skills.pii_detector import redact as redact_text
+from kortex_core.skills.review_policy import decide_review
 from kortex_core.skills.trust_policy import (
     InjectionVerdict,
     should_quarantine,
@@ -58,6 +63,10 @@ class CreateMemoryInput:
     pinned: bool = False
     metadata: dict | None = None
     expires_at: dt.datetime | None = None
+    confidence: float | None = None
+    """The writer's own certainty, 0-1. None means it did not say, which is
+    treated as certain — an agent that never reports confidence should not have
+    every write queued."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +83,10 @@ class MemoryWrite:
     pii_flags: dict[str, int] = field(default_factory=dict)
     """Counts by kind of what the detector found. Empty when nothing did."""
     redacted: bool = False
-    quarantined: bool = False
-    """True when the memory was withheld from retrieval pending review."""
+    pending_review: bool = False
+    """True when the memory was withheld from retrieval pending review —
+    whether for suspicion or for low confidence."""
+    review_reason: str = ""
 
 
 class MemoryService:
@@ -91,6 +102,7 @@ class MemoryService:
         # don't re-query the org/count per created memory.
         self._org_plan: str | None = None
         self._mem_count: int | None = None
+        self._review_modes: dict[int, ReviewMode] | None = None
 
     def _require_scope(self, name: str) -> None:
         """Enforce API-key scopes (no-op for users, whose key_scopes is empty)."""
@@ -116,6 +128,69 @@ class MemoryService:
                 f"({cap:,} memories). Upgrade your plan to store more."
             )
         self._mem_count += 1
+
+    async def _review_mode(self, payload: CreateMemoryInput) -> ReviewMode:
+        """Gating is a per-project setting; anything not in a project is ungated.
+
+        Cached per service instance so a batch ingest resolves it once rather
+        than per memory.
+        """
+        if payload.scope_type is not ScopeType.PROJECT:
+            return ReviewMode.OFF
+        if self._review_modes is None:
+            self._review_modes = {}
+        cached = self._review_modes.get(payload.scope_id)
+        if cached is None:
+            project = await ProjectRepository(self._session, principal=self._principal).get_by_id(
+                payload.scope_id
+            )
+            cached = ReviewMode(project.review_mode) if project else ReviewMode.OFF
+            self._review_modes[payload.scope_id] = cached
+        return cached
+
+    async def review(
+        self,
+        public_id: uuid.UUID,
+        *,
+        approve: bool,
+    ) -> Memory | None:
+        """Approve or reject a held memory, and say so in the audit log.
+
+        Every decision is recorded with who made it. A review trail that cannot
+        answer "who approved this" is not a trail, and this is the surface an
+        enterprise buyer asks about first.
+        """
+        self._require_scope("write:memory")
+        memory = await self._repo.get_by_public_id(public_id)
+        if memory is None:
+            return None
+        self._require_write(memory)
+        if memory.review_status != ReviewStatus.PENDING.value:
+            return memory
+        status = ReviewStatus.APPROVED if approve else ReviewStatus.REJECTED
+        reviewer = self._principal.actor_id if self._principal.actor_kind.value == "user" else None
+        await self._repo.set_review_status(memory, status=status, reviewer_id=reviewer)
+        await AuditRepository(self._session, principal=self._principal).append(
+            actor_kind=self._principal.actor_kind,
+            actor_id=self._principal.actor_id,
+            action=f"memory.review.{status.value}",
+            target_type="memory",
+            target_id=memory.id,
+            metadata={"reason": memory.review_reason or "", "scope_id": memory.scope_id},
+        )
+        return memory
+
+    async def pending_review(self, *, limit: int = 50, offset: int = 0) -> list[Memory]:
+        self._require_scope("read:memory")
+        return await self._repo.list_pending_review(limit=limit, offset=offset)
+
+    async def pending_review_count(self) -> int:
+        self._require_scope("read:memory")
+        return await self._repo.count_pending_review()
+
+    async def similar_for_review(self, memory: Memory, *, limit: int = 3) -> list[Memory]:
+        """What the reviewer needs to tell "new fact" from "fourth restatement"."""
+        return await self._repo.find_similar_for_review(memory, limit=limit)
 
     def _require_write(self, memory: Memory) -> None:
         scope = ScopeRef(type=ScopeType(memory.scope_type), id=memory.scope_id)
@@ -151,11 +226,12 @@ class MemoryService:
         and the caller pays context tokens to read the same sentence twice.
         ``force=True`` stores the copy anyway.
 
-        Every write is also scanned for personal and secret data, assigned a
-        trust level from its ``source_type``, and — when it is low-trust and
-        reads as instructions to the model — quarantined out of retrieval
-        pending review. What the PII scan *does* is set by ``pii_policy``;
-        the default only records what it found.
+        Every write is also scanned for personal and secret data and assigned a
+        trust level from its ``source_type``. It is held out of retrieval
+        pending review when it is low-trust and reads as instructions to a
+        model, or when the project gates writes and this one did not clear the
+        bar. What the PII scan *does* is set by ``pii_policy``; the default
+        only records what it found.
         """
         self._require_scope("write:memory")
         scope_ref = ScopeRef(type=payload.scope_type, id=payload.scope_id)
@@ -200,12 +276,18 @@ class MemoryService:
             if settings.injection_quarantine
             else InjectionVerdict(suspicious=False)
         )
-        if verdict.suspicious:
+        review = decide_review(
+            mode=await self._review_mode(payload),
+            confidence=payload.confidence,
+            threshold=settings.review_confidence_threshold,
+            suspicious_reason=verdict.reason if verdict.suspicious else "",
+        )
+        if review.held:
             log.warning(
-                "memory_quarantined",
+                "memory_held_for_review",
                 org_id=self._principal.org_id,
                 source=payload.source_type.value,
-                patterns=list(verdict.patterns),
+                reason=review.reason,
             )
 
         digest: str | None = None
@@ -237,7 +319,6 @@ class MemoryService:
             embedding = vectors[0]
             embedding_model = embedder.model_id
 
-        now = dt.datetime.now(tz=dt.UTC)
         created = await self._repo.create(
             scope_type=payload.scope_type,
             scope_id=payload.scope_id,
@@ -259,15 +340,17 @@ class MemoryService:
             content_hash=digest,
             trust=trust.value,
             pii_flags=findings,
-            quarantined_at=now if verdict.suspicious else None,
-            quarantine_reason=verdict.reason or None,
+            review_status=review.status.value,
+            review_reason=review.reason or None,
+            confidence=payload.confidence,
         )
         return MemoryWrite(
             memory=created,
             deduped=False,
             pii_flags=findings,
             redacted=redacted,
-            quarantined=verdict.suspicious,
+            pending_review=review.held,
+            review_reason=review.reason,
         )
 
     async def get(self, public_id: uuid.UUID) -> Memory | None:

@@ -54,6 +54,7 @@ async def create_memory(
             pinned=payload.pinned,
             metadata=payload.metadata,
             expires_at=payload.expires_at,
+            confidence=payload.confidence,
         ),
         embed_inline=embed_inline,
         force=force,
@@ -63,7 +64,6 @@ async def create_memory(
     return out.model_copy(
         update={
             "deduped": result.deduped,
-            "quarantined": result.quarantined,
             "pii_flags": result.pii_flags,
         }
     )

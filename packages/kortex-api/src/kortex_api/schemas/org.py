@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from kortex_api.schemas.common import APIModel, TimestampedOut
@@ -38,7 +40,13 @@ class ProjectIn(APIModel):
     name: str = Field(min_length=1, max_length=200)
 
 
+class ProjectReviewIn(APIModel):
+    review_mode: Literal["off", "low_confidence", "all"]
+
+
 class ProjectOut(TimestampedOut):
     id: int
     slug: str
     name: str
+    review_mode: str = "off"
+    """Whether writes here wait for a human: off, low_confidence, or all."""

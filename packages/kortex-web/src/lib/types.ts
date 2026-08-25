@@ -59,6 +59,14 @@ export type Memory = {
   last_accessed_at: string | null;
   expires_at: string | null;
   metadata: Record<string, unknown>;
+  // Governance (WU-2.3 / WU-2.4). Optional so the type still describes a
+  // response from an older API without every call site guarding.
+  trust?: "high" | "medium" | "low";
+  review_status?: "approved" | "pending" | "rejected";
+  review_reason?: string | null;
+  confidence?: number | null;
+  pii_flags?: Record<string, number>;
+  embedding_state?: "ok" | "pending" | "failed";
 };
 
 export type CountSlice = { label: string; value: number };
