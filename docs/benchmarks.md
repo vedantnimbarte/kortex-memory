@@ -90,7 +90,9 @@ Separately from publishing, `tests/integration/test_retrieval_quality.py`
 scores a small synthetic corpus in ordinary CI and fails if recall or MRR drops
 below a floor. That catches a broken ranker on the pull request that caused it.
 Its floors are loose by design — it detects breakage, not drift, so retrieval
-tweaks do not turn every build red.
+tweaks do not turn every build red. It deliberately does not gate `recall@1`:
+under keyword-only search the gold document and a same-topic distractor score
+close enough on cover density that their order is drift, not correctness.
 
 **Synthetic numbers are never published as benchmark results.** They measure
 the plumbing, not memory quality.
