@@ -93,6 +93,7 @@ class MemoryRepository(BaseRepository[Memory]):
         embedding: list[float] | None = None,
         embedding_model: str | None = None,
         created_by: int | None = None,
+        content_hash: str | None = None,
     ) -> Memory:
         memory = Memory(
             org_id=self.principal.org_id,
@@ -112,6 +113,7 @@ class MemoryRepository(BaseRepository[Memory]):
             embedding_model=embedding_model,
             metadata_=dict(metadata) if metadata else {},
             expires_at=expires_at,
+            content_hash=content_hash,
         )
         self._session.add(memory)
         await self._session.flush()
@@ -503,6 +505,48 @@ class MemoryRepository(BaseRepository[Memory]):
         if new_tier is not None:
             values["tier"] = new_tier
         await self._session.execute(update(Memory).where(Memory.id == memory_id).values(**values))
+
+    # ---- deduplication ----
+
+    async def find_by_content_hash(
+        self,
+        *,
+        scope_type: ScopeType,
+        scope_id: int,
+        content_hash: str,
+    ) -> Memory | None:
+        """The live memory in this scope with the same fingerprint, if any.
+
+        Scoped rather than org-wide on purpose: the same sentence recorded
+        against two different projects is two facts, not one, and folding them
+        together would leak one project's context into the other's recall.
+        """
+        stmt = (
+            self.tenant_query()
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.scope_type == scope_type.value)
+            .where(Memory.scope_id == scope_id)
+            .where(Memory.content_hash == content_hash)
+            .order_by(Memory.created_at)
+            .limit(1)
+        )
+        return (await self._session.execute(stmt)).scalars().first()
+
+    async def record_duplicate(self, memory: Memory, *, metadata: dict | None = None) -> Memory:
+        """Fold a repeat write into the memory that already holds it.
+
+        The repeat is evidence the fact still matters, so it counts as an
+        access — which is what feeds the decay score and keeps a re-remembered
+        memory from fading. Metadata is merged rather than replaced: the
+        duplicate may carry a new source reference worth keeping, and dropping
+        the existing keys would lose provenance the survivor already had.
+        """
+        memory.access_count += 1
+        memory.last_accessed_at = dt.datetime.now(tz=dt.UTC)
+        if metadata:
+            memory.metadata_ = {**(memory.metadata_ or {}), **metadata}
+        await self._session.flush()
+        return memory
 
     # ---- conflict detection ----
 

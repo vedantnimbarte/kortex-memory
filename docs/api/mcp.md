@@ -54,6 +54,26 @@ state of the world reads first. Nothing is ever filtered out — deciding which 
 contradiction holds needs conversation context that only the agent has. `created_at` is included
 so that decision can be made without another round trip.
 
+## Duplicate writes
+
+`remember` folds a repeat into the memory that already holds it. Writing the
+same normalised title+body to the same scope returns the existing memory with
+`deduped: true` rather than storing a second copy — so an agent that
+re-remembers a fact across sessions does not pay context tokens to read the
+same sentence twice in later recalls.
+
+The repeat counts as an access, which feeds the decay score and keeps a
+re-confirmed memory from fading. Metadata is merged into the survivor.
+
+Matching is exact on normalised content: whitespace is collapsed and Unicode is
+folded to NFKC, but **case is preserved** and **paraphrases are not matched** —
+"We use Redis for the queue" and "the queue runs on Redis" are two memories.
+Catching those needs a vector comparison, which needs an embedding, which does
+not exist yet at write time.
+
+Pass `force: true` for a deliberate second copy. Turn the whole thing off with
+`KORTEX_DEDUP_ON_WRITE=false`.
+
 ## Budgets and cost on recall
 
 `recall` and `get_context_bundle` accept two optional caps:

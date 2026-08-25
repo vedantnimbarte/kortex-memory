@@ -64,7 +64,7 @@ def _scope_props() -> dict[str, Any]:
 async def _remember(args: dict[str, Any]) -> dict[str, Any]:
     async with tool_context() as (session, principal):
         svc = MemoryService(session, principal)
-        memory = await svc.create(
+        result = await svc.write(
             CreateMemoryInput(
                 scope_type=ScopeType(args["scope_type"]),
                 scope_id=int(args["scope_id"]),
@@ -79,15 +79,18 @@ async def _remember(args: dict[str, Any]) -> dict[str, Any]:
                 metadata=args.get("metadata"),
             ),
             embed_inline=bool(args.get("embed_inline", False)),
+            force=bool(args.get("force", False)),
         )
-        return _memory_out(memory)
+        return {**_memory_out(result.memory), "deduped": result.deduped}
 
 
 _REMEMBER = ToolDef(
     name="remember",
     description=(
         "Store a new atomic memory (fact, preference, decision, etc.) at a "
-        "given scope. The memory is embedded asynchronously by the worker; pass "
+        "given scope. Writing the same content twice returns the existing "
+        "memory with `deduped: true` instead of storing a copy. "
+        "The memory is embedded asynchronously by the worker; pass "
         "embed_inline=true to embed during the call (slower, useful for tests)."
     ),
     input_schema={
@@ -122,6 +125,17 @@ _REMEMBER = ToolDef(
             "pinned": {"type": "boolean", "default": False},
             "metadata": {"type": ["object", "null"], "default": None},
             "embed_inline": {"type": "boolean", "default": False},
+            "force": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Store this memory even if an identical one already exists in "
+                    "the same scope. Leave false unless you specifically want a "
+                    "second copy: by default a repeat write folds into the "
+                    "existing memory and returns it with `deduped: true`, which "
+                    "keeps duplicates out of later recall results."
+                ),
+            },
         },
         "additionalProperties": False,
     },

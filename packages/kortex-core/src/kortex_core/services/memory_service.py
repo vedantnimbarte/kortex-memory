@@ -17,6 +17,7 @@ from kortex_core.db.types import (
     ScopeType,
     Sensitivity,
 )
+from kortex_core.dedup import content_hash
 from kortex_core.embeddings.registry import get_embedder
 from kortex_core.models.memory import Memory, MemoryLink
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
@@ -30,6 +31,7 @@ from kortex_core.security.plan_limits import QuotaExceededError, max_memories
 from kortex_core.security.principal import Principal, ScopeRef
 from kortex_core.services.access_control import AccessControl, ResourceRef
 from kortex_core.services.access_control import AccessDeniedError as _AccessDenied
+from kortex_core.settings import get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,19 @@ class CreateMemoryInput:
     pinned: bool = False
     metadata: dict | None = None
     expires_at: dt.datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryWrite:
+    """The outcome of a write: the stored memory, and whether it was new.
+
+    ``deduped`` lets a caller tell "I created this" from "this already
+    existed", which an agent needs in order to avoid reporting that it saved
+    something it merely re-confirmed.
+    """
+
+    memory: Memory
+    deduped: bool
 
 
 class MemoryService:
@@ -95,7 +110,32 @@ class MemoryService:
         ):
             raise _AccessDenied(f"cannot modify {memory.sensitivity} memory in {scope}")
 
-    async def create(self, payload: CreateMemoryInput, *, embed_inline: bool = False) -> Memory:
+    async def create(
+        self,
+        payload: CreateMemoryInput,
+        *,
+        embed_inline: bool = False,
+        force: bool = False,
+    ) -> Memory:
+        """Store a memory, folding away a verbatim repeat. See :meth:`write`."""
+        result = await self.write(payload, embed_inline=embed_inline, force=force)
+        return result.memory
+
+    async def write(
+        self,
+        payload: CreateMemoryInput,
+        *,
+        embed_inline: bool = False,
+        force: bool = False,
+    ) -> MemoryWrite:
+        """Store a memory and report whether it was new.
+
+        When an identical memory already exists in the same scope, the existing
+        one is returned with its access count bumped instead of a second copy
+        being stored — otherwise both compete for space in every future recall
+        and the caller pays context tokens to read the same sentence twice.
+        ``force=True`` stores the copy anyway.
+        """
         self._require_scope("write:memory")
         scope_ref = ScopeRef(type=payload.scope_type, id=payload.scope_id)
         if not self._ac.can_write(
@@ -103,6 +143,25 @@ class MemoryService:
             ResourceRef(scope=scope_ref, sensitivity=payload.sensitivity),
         ):
             raise _AccessDenied(f"cannot write {payload.sensitivity.value} memory in {scope_ref}")
+        settings = get_settings()
+        digest: str | None = None
+        if settings.dedup_on_write:
+            digest = content_hash(payload.title, payload.body)
+            if not force:
+                existing = await self._repo.find_by_content_hash(
+                    scope_type=payload.scope_type,
+                    scope_id=payload.scope_id,
+                    content_hash=digest,
+                )
+                if existing is not None:
+                    # Checked before the quota deliberately: folding a repeat
+                    # into an existing memory stores nothing new, so it must not
+                    # be able to push an org over its plan cap.
+                    await self._repo.record_duplicate(existing, metadata=payload.metadata)
+                    return MemoryWrite(memory=existing, deduped=True)
+            # A forced copy still records its fingerprint, so a later unforced
+            # write folds into the original rather than adding a third row.
+
         await self._enforce_memory_quota()
 
         embedding: list[float] | None = None
@@ -114,7 +173,7 @@ class MemoryService:
             embedding = vectors[0]
             embedding_model = embedder.model_id
 
-        return await self._repo.create(
+        created = await self._repo.create(
             scope_type=payload.scope_type,
             scope_id=payload.scope_id,
             body=payload.body,
@@ -132,7 +191,9 @@ class MemoryService:
             created_by=(
                 self._principal.actor_id if self._principal.actor_kind.value == "user" else None
             ),
+            content_hash=digest,
         )
+        return MemoryWrite(memory=created, deduped=False)
 
     async def get(self, public_id: uuid.UUID) -> Memory | None:
         self._require_scope("read:memory")

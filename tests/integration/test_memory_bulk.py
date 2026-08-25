@@ -26,9 +26,10 @@ async def test_bulk_pin_then_delete(session) -> None:  # type: ignore[no-untyped
     svc = MemoryService(session, principal)
 
     ids = []
-    for _ in range(3):
+    for i in range(3):
+        # Distinct bodies: identical content would dedup into a single row.
         m = await svc.create(
-            CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body="b")
+            CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body=f"b{i}")
         )
         ids.append(m.public_id)
 

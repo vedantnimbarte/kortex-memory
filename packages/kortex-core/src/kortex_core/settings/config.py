@@ -150,6 +150,11 @@ class KortexSettings(BaseSettings):
     conflict_batch_size: int = 32
     conflict_daily_quota_per_org: int = 2000
 
+    # --- Write-time deduplication ---
+    dedup_on_write: bool = True
+    """Fold a byte-identical rewrite into the existing memory instead of storing
+    a second copy. Callers can bypass it per write with ``force``."""
+
     # --- Memory tiers / decay ---
     decay_lambda_short: float = 0.30
     decay_lambda_mid: float = 0.05

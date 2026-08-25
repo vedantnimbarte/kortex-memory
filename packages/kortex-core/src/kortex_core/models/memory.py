@@ -71,6 +71,16 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         ),
         # The conflict scan runs every minute and is almost always empty; a
         # partial index keeps it from touching the table at all.
+        # Dedup looks up by (tenant, scope, fingerprint) on every write, so it
+        # has to be indexed or it is a seq scan per memory created.
+        Index(
+            "ix_memories_content_hash",
+            "org_id",
+            "scope_type",
+            "scope_id",
+            "content_hash",
+            postgresql_where=text("content_hash IS NOT NULL AND deleted_at IS NULL"),
+        ),
         # Operators need "how many are stuck" to be cheap; without this the
         # ingest-status query is a seq scan on the largest table.
         Index(
@@ -135,6 +145,11 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         ),
         nullable=False,
     )
+
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """SHA-256 of the normalised title+body, used to fold away verbatim
+    rewrites. NULL on memories written before dedup existed, and on writes that
+    asked to bypass it."""
 
     conflict_checked_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

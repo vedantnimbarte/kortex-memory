@@ -52,6 +52,9 @@ class MemoryOut(APIModel):
     last_accessed_at: dt.datetime | None
     expires_at: dt.datetime | None
     metadata_: dict = Field(alias="metadata")
+    deduped: bool = False
+    """True when this write folded into an existing identical memory rather
+    than creating a new one. Only ever set on a create response."""
     embedding_state: Literal["ok", "pending", "failed"] = "pending"
     """``pending``/``failed`` mean this memory is not in vector search yet."""
     embed_attempts: int = 0
