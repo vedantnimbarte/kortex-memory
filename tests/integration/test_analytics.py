@@ -27,9 +27,15 @@ async def test_analytics_aggregates_full_set(session) -> None:  # type: ignore[n
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     svc = MemoryService(session, principal)
 
+    made = 0
+
     async def make(**over) -> None:  # type: ignore[no-untyped-def]
+        # Distinct bodies: write-time dedup folds identical content into one
+        # row, and every memory here is meant to be its own row.
+        nonlocal made
+        made += 1
         m = await svc.create(
-            CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body="b")
+            CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body=f"body {made}")
         )
         for k, v in over.items():
             setattr(m, k, v)

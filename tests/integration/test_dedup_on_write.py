@@ -127,7 +127,7 @@ async def test_the_same_text_in_another_scope_is_a_different_memory(session) -> 
     repo = MemoryRepository(session, principal=principal)
 
     await svc.write(_payload(ws.id))
-    result = await svc.write(_payload(ws.id, scope_type=ScopeType.ORG, scope_id=principal.org_id))
+    result = await svc.write(_payload(principal.org_id, scope_type=ScopeType.ORG))
     await session.flush()
 
     assert result.deduped is False

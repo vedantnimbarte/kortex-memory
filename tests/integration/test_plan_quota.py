@@ -30,11 +30,17 @@ async def test_free_plan_blocks_memories_over_cap(session, monkeypatch) -> None:
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
 
     svc = MemoryService(session, principal)
-    payload = CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body="m")
-    await svc.create(payload)
-    await svc.create(payload)  # at cap (2)
+
+    def payload(body: str) -> CreateMemoryInput:
+        # Each memory must be distinct: a repeat write folds into the existing
+        # row and deliberately does not consume quota, which is covered by
+        # test_dedup_on_write.py.
+        return CreateMemoryInput(scope_type=ScopeType.WORKSPACE, scope_id=ws.id, body=body)
+
+    await svc.create(payload("m1"))
+    await svc.create(payload("m2"))  # at cap (2)
     with pytest.raises(QuotaExceededError):
-        await svc.create(payload)  # 3rd exceeds
+        await svc.create(payload("m3"))  # 3rd exceeds
 
 
 async def test_free_plan_blocks_second_workspace(session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
