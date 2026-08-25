@@ -15,6 +15,8 @@ import pytest
 from kortex_core.db.types import MemoryKind, MemorySource, ReviewMode, ReviewStatus, ScopeType
 from kortex_core.models.audit import AuditLog
 from kortex_core.repositories.memory_repo import MemoryRepository
+from kortex_core.repositories.project_repo import ProjectRepository
+from kortex_core.repositories.workspace_repo import WorkspaceRepository
 from kortex_core.services.auth_service import AuthService
 from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
 from kortex_core.services.project_service import ProjectService
@@ -34,11 +36,14 @@ async def _owner(session, email: str, org: str):  # type: ignore[no-untyped-def]
 
 
 async def _project(session, principal, *, mode: ReviewMode):  # type: ignore[no-untyped-def]
-    """A project with a gating mode set, returned as its numeric scope id."""
-    ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
-    project = await ProjectService(session, principal).create(
-        workspace_public_id=ws.public_id, slug="gated", name="Gated"
-    )
+    """The default project signup created, with a gating mode set.
+
+    ``principal.roles`` holds ScopeRefs — a scope type and a numeric id, not a
+    model — so the project is fetched by id rather than created from a
+    public_id the ref does not carry.
+    """
+    scope = next(s for s in principal.roles if s.type == ScopeType.PROJECT)
+    project = await ProjectRepository(session, principal=principal).get_by_id(scope.id)
     assert project is not None
     project.review_mode = mode.value
     await session.flush()
@@ -170,11 +175,13 @@ async def test_gating_is_per_project(session) -> None:  # type: ignore[no-untype
     forced to share a setting."""
     principal = await _owner(session, "rev6@acme.io", "Review Co 6")
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
-    projects = ProjectService(session, principal)
-    gated = await projects.create(workspace_public_id=ws.public_id, slug="gated", name="Gated")
-    open_ = await projects.create(workspace_public_id=ws.public_id, slug="open", name="Open")
-    assert gated is not None and open_ is not None
-    gated.review_mode = ReviewMode.ALL.value
+    workspace = await WorkspaceRepository(session, principal=principal).get_by_id(ws.id)
+    assert workspace is not None
+    gated = await _project(session, principal, mode=ReviewMode.ALL)
+    open_ = await ProjectService(session, principal).create(
+        workspace_public_id=workspace.public_id, slug="open", name="Open"
+    )
+    assert open_ is not None
     await session.flush()
 
     svc = MemoryService(session, principal)
@@ -230,10 +237,7 @@ async def test_the_queue_shows_what_a_held_memory_resembles(session) -> None:  #
     """The decision is usually "new fact, or fourth restatement" — so the
     reviewer gets the similar approved memories without going to search."""
     principal = await _owner(session, "rev10@acme.io", "Review Co 10")
-    ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
-    projects = ProjectService(session, principal)
-    project = await projects.create(workspace_public_id=ws.public_id, slug="p", name="P")
-    assert project is not None
+    project = await _project(session, principal, mode=ReviewMode.OFF)
     svc = MemoryService(session, principal)
 
     # An approved memory on the same topic, then a gated one.
