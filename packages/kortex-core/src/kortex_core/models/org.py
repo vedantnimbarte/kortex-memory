@@ -76,6 +76,16 @@ class Project(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         BigInteger, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
     )
     slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    text_search_config: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="english"
+    )
+    """Postgres text-search configuration for keyword search in this project —
+    ``english``, ``french``, ``german``, ``simple``, and so on.
+
+    The source of truth; memories copy it onto their own row at write time
+    because a generated column cannot reach another table.
+    """
+
     review_mode: Mapped[str] = mapped_column(
         review_mode_enum, nullable=False, default=ReviewMode.OFF.value
     )

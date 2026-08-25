@@ -22,6 +22,7 @@ from kortex_core.embeddings.retry import decide_retry
 from kortex_core.models.memory import Memory
 from kortex_core.repositories.base import BaseRepository
 from kortex_core.retrieval.hybrid import HybridSearchHit, rrf_fuse
+from kortex_core.retrieval.text_search import DEFAULT_TS_CONFIG, config_for_scopes
 from kortex_core.settings import get_settings
 from kortex_core.skills.trust_policy import trusts_allowed_for
 
@@ -101,6 +102,7 @@ class MemoryRepository(BaseRepository[Memory]):
         review_status: str = "approved",
         review_reason: str | None = None,
         confidence: float | None = None,
+        ts_config: str = DEFAULT_TS_CONFIG,
     ) -> Memory:
         memory = Memory(
             org_id=self.principal.org_id,
@@ -126,6 +128,7 @@ class MemoryRepository(BaseRepository[Memory]):
             review_status=review_status,
             review_reason=review_reason,
             confidence=confidence,
+            ts_config=ts_config,
         )
         self._session.add(memory)
         await self._session.flush()
@@ -522,6 +525,35 @@ class MemoryRepository(BaseRepository[Memory]):
             values["tier"] = new_tier
         await self._session.execute(update(Memory).where(Memory.id == memory_id).values(**values))
 
+    async def reanalyse_scope(
+        self,
+        *,
+        scope_type: ScopeType,
+        scope_id: int,
+        ts_config: str,
+    ) -> None:
+        """Re-stem every memory in a scope under a new configuration.
+
+        Writing ``ts_config`` regenerates each row's ``tsv``, so this is what
+        makes a configuration change apply to text that is already stored
+        rather than only to future writes.
+
+        ponytail: one UPDATE over the whole scope. Correct at any size but a
+        long write on a large project -- move it to a worker task if corpora
+        grow.
+        """
+        stmt = (
+            update(Memory)
+            .where(
+                Memory.org_id == self.principal.org_id,
+                Memory.scope_type == scope_type.value,
+                Memory.scope_id == scope_id,
+                Memory.deleted_at.is_(None),
+            )
+            .values(ts_config=ts_config)
+        )
+        await self._session.execute(stmt)
+
     # ---- governance ----
 
     async def list_pending_review(self, *, limit: int = 50, offset: int = 0) -> list[Memory]:
@@ -756,6 +788,10 @@ class MemoryRepository(BaseRepository[Memory]):
 
         ``query_vector`` may be ``None`` if the configured embedder is
         unavailable; in that case we fall back to BM25 only.
+
+        The query is parsed with the analyser of the first project searched
+        (see :mod:`kortex_core.retrieval.text_search`), so a French project
+        is searched with French stemming rather than English.
         """
         s = get_settings()
         kv = top_k_vector or s.retrieval_top_k_vector
@@ -764,7 +800,9 @@ class MemoryRepository(BaseRepository[Memory]):
 
         principal = self.principal
         org_filter_sql = ""
-        params: dict[str, object] = {}
+        params: dict[str, object] = {
+            "ts_config": await config_for_scopes(self._session, principal, scopes)
+        }
         if not principal.is_superuser:
             org_filter_sql = "AND m.org_id = :org_id"
             params["org_id"] = principal.org_id
@@ -821,10 +859,10 @@ class MemoryRepository(BaseRepository[Memory]):
         b_sql = text(
             f"""
             SELECT m.id,
-                   ts_rank_cd(m.tsv, plainto_tsquery('english', :q)) AS rank
+                   ts_rank_cd(m.tsv, plainto_tsquery(:ts_config::regconfig, :q)) AS rank
             FROM memories m
             WHERE m.deleted_at IS NULL
-              AND m.tsv @@ plainto_tsquery('english', :q)
+              AND m.tsv @@ plainto_tsquery(:ts_config::regconfig, :q)
               AND m.sensitivity IN ({sens_placeholders})
               {gov_filter_sql}
               {org_filter_sql}

@@ -20,8 +20,9 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
-from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, REGCONFIG, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kortex_core.db.base import Base
@@ -125,9 +126,16 @@ class AttachmentChunk(Base, TimestampMixin):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    ts_config: Mapped[str] = mapped_column(
+        REGCONFIG,
+        nullable=False,
+        server_default=text("'english'::regconfig"),
+    )
+    """Analyser for this chunk, denormalised from the attachment's project."""
+
     tsv: Mapped[str] = mapped_column(
         TSVECTOR,
-        Computed("to_tsvector('english', coalesce(content,''))", persisted=True),
+        Computed("to_tsvector(ts_config, coalesce(content,''))", persisted=True),
         nullable=False,
     )
 

@@ -14,13 +14,14 @@ from kortex_core.attachments.chunker import chunk_text
 from kortex_core.attachments.extract import extract_text
 from kortex_core.db.engine import close_engine
 from kortex_core.db.session import session_scope
-from kortex_core.db.types import ActorKind, AttachmentStatus
+from kortex_core.db.types import ActorKind, AttachmentStatus, ScopeType
 from kortex_core.embeddings.protocol import EmbeddingError
 from kortex_core.embeddings.registry import get_embedder
 from kortex_core.repositories.attachment_repo import (
     AttachmentChunkRepository,
     AttachmentRepository,
 )
+from kortex_core.retrieval.text_search import config_for_scope
 from kortex_core.security.principal import Principal
 from kortex_core.settings import get_settings
 from kortex_core.storage.registry import get_blob_store
@@ -54,12 +55,13 @@ async def _process_one(attachment_id: int) -> str:
 
         # Bind principal to the attachment's org so the chunk repo writes the
         # correct ``org_id`` and the tenancy check is satisfied.
-        chunks_repo._principal = Principal(
+        scoped = Principal(
             actor_id=0,
             actor_kind=ActorKind.SYSTEM,
             org_id=attachment.org_id,
             is_superuser=True,
         )
+        chunks_repo._principal = scoped
 
         try:
             body = await store.get_bytes(bucket=attachment.s3_bucket, key=attachment.s3_key)
@@ -92,6 +94,15 @@ async def _process_one(attachment_id: int) -> str:
         # Replace any prior chunks (idempotent reprocessing).
         await chunks_repo.delete_for_attachment(attachment_id)
 
+        # Chunks are stemmed with the project's analyser, not English by
+        # default -- see kortex_core.retrieval.text_search.
+        ts_config = await config_for_scope(
+            session,
+            scoped,
+            ScopeType(attachment.scope_type),
+            attachment.scope_id,
+        )
+
         # Try to embed up-front; if the embedder isn't available, write chunks
         # without vectors and let ``embed_pending`` (M2) or a future
         # attachment-specific embed task fill them in.
@@ -113,6 +124,7 @@ async def _process_one(attachment_id: int) -> str:
                     chunks=chunks,
                     embeddings=vectors,
                     embedding_model=embedder.model_id,
+                    ts_config=ts_config,
                 )
                 await repo.mark_status(attachment_id, status=AttachmentStatus.READY)
                 log.info(
@@ -122,7 +134,9 @@ async def _process_one(attachment_id: int) -> str:
                 )
                 return "ready"
         # No embedder or embedding failed → still record chunks for BM25.
-        await chunks_repo.insert_many(attachment_id=attachment_id, chunks=chunks)
+        await chunks_repo.insert_many(
+            attachment_id=attachment_id, chunks=chunks, ts_config=ts_config
+        )
         await repo.mark_status(attachment_id, status=AttachmentStatus.READY)
         log.info(
             "attachment_ready_no_embeddings",

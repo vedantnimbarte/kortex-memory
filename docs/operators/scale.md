@@ -66,6 +66,40 @@ kortex admin reindex-embeddings   # clears every vector; embed_pending refills
 kortex admin ingest-status        # watch the queue drain
 ```
 
+### Non-English corpora
+
+Two independent things decide whether search works in another language, and
+getting one right without the other looks like it works and does not.
+
+**Keyword search** is stemmed by a Postgres text-search configuration, set per
+project. It defaults to `english`, which on a French or German corpus still
+returns *something* — the worst failure mode, because nothing looks broken.
+
+```bash
+curl -X PATCH "$KORTEX_API/v1/workspaces/$WS/projects/$PROJ/text-search-config"   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d '{"text_search_config": "french"}'
+```
+
+`SELECT cfgname FROM pg_ts_config` lists what your server has; the endpoint
+rejects anything not in it. Changing the setting re-analyses the memories and
+attachment chunks already in that project, so the whole corpus stays
+consistent — on a large project that is a long write, so do it in a quiet
+window.
+
+Postgres ships no configuration for Chinese, Japanese, Korean or Thai. Use
+`simple` there, which tokenises on whitespace without stemming, and lean on
+vector recall — or install an extension (`pg_jieba`, `pgroonga`) and name it.
+
+**Vector search** needs a multilingual model. `BAAI/bge-large-en-v1.5`, the
+default, is English-only:
+
+```bash
+KORTEX_EMBEDDER=local_bge
+KORTEX_EMBEDDER_MODEL=BAAI/bge-m3     # multilingual, 1024-dim
+```
+
+bge-m3 is 1024-dimensional, so it drops in without the width migration above.
+Switching still invalidates every existing vector — see below.
+
 ### Switching embedder
 
 Vectors from different models are not comparable, so a switch invalidates the
