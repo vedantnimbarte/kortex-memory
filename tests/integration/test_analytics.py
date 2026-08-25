@@ -36,15 +36,34 @@ async def test_analytics_aggregates_full_set(session) -> None:  # type: ignore[n
         await session.flush()
 
     # 4 memories: varied tier / kind / decay / access / pin / created_at.
+    #
+    # `created_at` is pinned relative to NOW on every row. Leaving it to the
+    # server default meant "today" was the wall clock while the assertions
+    # measured a 14-day window ending at a hard-coded NOW — so this test passed
+    # only while real time happened to sit near that date, and started failing
+    # the moment it did not.
     await make(
         tier="long",
         kind=MemoryKind.DECISION.value,
         decay_score=0.9,
         access_count=10,
         pinned=True,
+        created_at=NOW,
     )
-    await make(tier="long", kind=MemoryKind.FACT.value, decay_score=0.5, access_count=3)
-    await make(tier="short", kind=MemoryKind.FACT.value, decay_score=0.1, access_count=1)
+    await make(
+        tier="long",
+        kind=MemoryKind.FACT.value,
+        decay_score=0.5,
+        access_count=3,
+        created_at=NOW,
+    )
+    await make(
+        tier="short",
+        kind=MemoryKind.FACT.value,
+        decay_score=0.1,
+        access_count=1,
+        created_at=NOW,
+    )
     await make(
         tier="mid",
         kind=MemoryKind.FACT.value,

@@ -65,6 +65,13 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
 - `embed_pending` returns a result dict instead of a bare count.
 
 ### Fixed
+- **`MissingGreenlet` on any async path that read a just-updated row.**
+  `TimestampMixin.updated_at` uses `onupdate=func.now()`, a SQL expression the ORM cannot
+  evaluate client-side, so after an UPDATE it marked the attribute expired; reading it then
+  triggered a lazy refresh, which is synchronous IO inside an async context. MCP `end_session`
+  and `update_memory` both returned an error to the agent instead of the updated row. The
+  declarative base now sets `eager_defaults`, so Postgres returns the generated value with the
+  UPDATE itself.
 - `docs/mkdocs.yml` pointed `repo_url` at `github.com/anthropic/kortex-memory`, and did not
   exclude the internal strategy documents — mkdocs publishes every page it finds in `docs_dir`
   regardless of the nav, so the market research and implementation plan would have shipped to a

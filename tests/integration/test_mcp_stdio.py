@@ -159,12 +159,21 @@ async def test_remember_list_search_delete_roundtrip(session) -> None:  # type: 
     assert a["public_id"] in ids
     assert b["public_id"] in ids
 
-    # recall / search_memory — caching query should surface memory `a`. With
-    # no embedding present the retrieval falls back to BM25 only, which still
-    # ranks `a` first for this query.
-    result = await _tool("recall").handler({"query": "caching strategy"})
-    hits = result["hits"]
-    assert any(h["public_id"] == a["public_id"] for h in hits)
+    # search_memory / recall — searching for "caching" should surface memory `a`.
+    #
+    # Single-term on purpose: with no embedder installed retrieval is BM25
+    # only, and `plainto_tsquery` ANDs its terms — "caching strategy" would
+    # require the document to contain both 'cach' and 'strategi', which `a`
+    # never did. The query matches 'cach' from both "caching" and "cache".
+    #
+    # The two tools also return different shapes: `search_memory` yields
+    # `hits`, while `recall` yields a ContextBundle whose ranked memories live
+    # under `candidates`.
+    searched = await _tool("search_memory").handler({"query": "caching"})
+    assert any(h["public_id"] == a["public_id"] for h in searched["hits"])
+
+    recalled = await _tool("recall").handler({"query": "caching"})
+    assert any(c["public_id"] == a["public_id"] for c in recalled["candidates"])
 
     # pin → update → get round trip on `a`.
     pinned = await _tool("pin_memory").handler({"public_id": a["public_id"], "pinned": True})
