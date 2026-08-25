@@ -108,6 +108,10 @@ class KortexSettings(BaseSettings):
     openai_api_key: SecretStr | None = None
     voyage_api_key: SecretStr | None = None
     cohere_api_key: SecretStr | None = None
+    aws_region: str = "us-east-1"
+    """Region for Bedrock (embeddings and LLM). Credentials come from the normal
+    AWS chain — environment, profile, or instance role — so nothing secret lives
+    in Kortex config."""
 
     # --- LLM ---
     llm_provider: str = "anthropic"

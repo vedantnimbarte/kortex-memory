@@ -85,6 +85,17 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   Scoped, never cross-scope. Bypass per write with `force`, or globally with
   `KORTEX_DEDUP_ON_WRITE=false`.
 
+- **Voyage, Ollama and Bedrock embedders**, plus a **Bedrock LLM** adapter. Bedrock support was
+  the single most-requested integration in the competitive research — usually not because of the
+  model but because it keeps data inside an existing AWS account. Voyage and Ollama are plain HTTP
+  and add no dependency; Bedrock reuses the `aiobotocore` stack the S3 backend already installs,
+  and uses the Converse API so token usage is reported uniformly.
+- **Embedding-dimension guard** — every vector column is `VECTOR(1024)`, so an embedder of any
+  other width does not degrade quality, it stops writes entirely. Adapters now refuse to construct
+  at the wrong width with a message naming the remedy, and Ollama re-checks on the first response
+  because it serves whatever model was pulled. The width now lives in one constant that the models
+  and the guard share, rather than as a literal in three model files.
+
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.
 - `search_memory` / `recall` / `get_context_bundle` responses gained a `conflicts` array per hit.

@@ -229,6 +229,7 @@ you only need to set the secrets.
 | **LLM** | `KORTEX_LLM_PROVIDER`, `KORTEX_LLM_MODEL_PLANNER`, `KORTEX_LLM_MODEL_SUMMARIZER`, `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` optional; enables agentic recall. |
 | **Retrieval** | `KORTEX_AGENTIC_RETRIEVAL`, `KORTEX_RETRIEVAL_MAX_HOPS`, `KORTEX_RETRIEVAL_MAX_CANDIDATES` | Tuning knobs for the planner. |
 | **Email** | `KORTEX_EMAIL_BACKEND`, `KORTEX_EMAIL_FROM`, `KORTEX_WEB_BASE_URL`, `KORTEX_SMTP_*` | `log` backend prints verify links to logs in dev; `smtp` for real delivery. |
+| **Embeddings** | `KORTEX_EMBEDDER` (`local_bge`, `openai`, `voyage`, `ollama`, `bedrock`), `KORTEX_EMBEDDER_MODEL`, `KORTEX_EMBEDDER_DIM`, `KORTEX_VOYAGE_API_KEY`, `KORTEX_AWS_REGION` | Every vector column is `VECTOR(1024)`; an embedder of any other width is rejected at construction rather than failing every insert. |
 | **Recall budgets** | `KORTEX_RETRIEVAL_PLANNER_MIN_BUDGET_MS`, `KORTEX_RETRIEVAL_PLANNER_MIN_BUDGET_TOKENS`, `KORTEX_RETRIEVAL_HOP_RESERVE_MS`, `KORTEX_LLM_PRICES` | Below the planner floor a recall runs plain hybrid. `KORTEX_LLM_PRICES` is model → `[in, out]` USD per Mtok; unset means `cost_usd` is reported as null. |
 | **Billing (Stripe)** | `KORTEX_STRIPE_SECRET_KEY`, `KORTEX_STRIPE_WEBHOOK_SECRET`, `KORTEX_STRIPE_PRICE_*`, `KORTEX_BILLING_*_URL` | Optional; unset = billing runs in preview (checkout disabled). |
 | **API** | `KORTEX_API_HOST`, `KORTEX_API_PORT`, `KORTEX_API_CORS_ORIGINS` | Add prod SPA origin(s) to CORS when deploying. |
