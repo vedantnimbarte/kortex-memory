@@ -203,8 +203,8 @@ class EvalRun:
             for item in items[: self._top_k]
             if (pid := str(item.get("public_id"))) in mapping
         )
-        # `usage` lands with issue #12; until then this is honestly zero rather
-        # than an estimate dressed up as a measurement.
+        # Populated since #12; still read defensively so the harness works
+        # against an older deployment rather than crashing on it.
         usage = result.get("usage") or {}
         return QueryOutcome(
             question_id=question.question_id,

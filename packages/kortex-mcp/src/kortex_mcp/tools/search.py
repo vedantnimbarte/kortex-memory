@@ -64,6 +64,8 @@ async def _recall(args: dict[str, Any], *, synthesize: bool) -> dict[str, Any]:
                 synthesize=synthesize or bool(args.get("synthesize", False)),
                 max_tokens=int(args.get("max_tokens", 0)),
                 per_item_max=int(args.get("per_item_max", 800)),
+                latency_budget_ms=int(args.get("latency_budget_ms", 0)),
+                token_budget=int(args.get("token_budget", 0)),
             )
         )
         return {
@@ -91,6 +93,7 @@ async def _recall(args: dict[str, Any], *, synthesize: bool) -> dict[str, Any]:
             "plan_rationale": bundle.plan_rationale,
             "hops": bundle.hops,
             "stopped_reason": bundle.stopped_reason,
+            "usage": bundle.usage.as_dict(),
         }
 
 
@@ -183,6 +186,25 @@ _RECALL_SCHEMA: dict[str, Any] = {
             "maximum": 4000,
             "default": 800,
         },
+        "latency_budget_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600000,
+            "default": 0,
+            "description": (
+                "Wall-clock ceiling for this call in milliseconds; 0 = unlimited. "
+                "Below roughly 1500ms the LLM planner is skipped and plain hybrid "
+                "retrieval runs instead, which is faster and cheaper but does not "
+                "do multi-hop reasoning."
+            ),
+        },
+        "token_budget": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000,
+            "default": 0,
+            "description": "Ceiling on LLM tokens spent planning and synthesising; 0 = unlimited.",
+        },
     },
     "additionalProperties": False,
 }
@@ -207,8 +229,10 @@ _RECALL = ToolDef(
     description=(
         "Agentic recall: plans a multi-step retrieval, executes against the "
         "hybrid substrate + link graph, reranks, and returns a packed "
-        "ContextBundle. Falls back to plain hybrid retrieval when the "
-        "planner LLM is not configured."
+        "ContextBundle. Falls back to plain hybrid retrieval when the planner "
+        "LLM is not configured or the latency/token budget cannot fit it. Pass "
+        "`latency_budget_ms` when you need a fast answer more than a thorough "
+        "one; `usage` reports what the call actually cost."
     ),
     input_schema=_RECALL_SCHEMA,
     handler=lambda args: _recall(args, synthesize=False),
@@ -219,7 +243,8 @@ _CONTEXT_BUNDLE = ToolDef(
     name="get_context_bundle",
     description=(
         "Like `recall`, but also synthesizes a cited answer with the "
-        "summarizer LLM. Returns the ContextBundle with `answer` populated."
+        "summarizer LLM. Returns the ContextBundle with `answer` populated. "
+        "Every response carries `usage` with tokens, latency and cost."
     ),
     input_schema=_RECALL_SCHEMA,
     handler=lambda args: _recall(args, synthesize=True),

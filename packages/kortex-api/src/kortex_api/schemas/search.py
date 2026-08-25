@@ -57,6 +57,12 @@ class RecallIn(APIModel):
     synthesize: bool = False
     max_tokens: int = Field(default=0, ge=0, le=32_000)
     per_item_max: int = Field(default=800, ge=64, le=4000)
+    latency_budget_ms: int = Field(default=0, ge=0, le=600_000)
+    """Wall-clock ceiling for the whole call; 0 means unlimited. A budget too
+    small for a planner round trip degrades to plain hybrid retrieval rather
+    than overshooting."""
+    token_budget: int = Field(default=0, ge=0, le=1_000_000)
+    """Ceiling on LLM tokens spent planning and synthesising; 0 = unlimited."""
 
 
 class CitationOut(APIModel):
@@ -76,6 +82,25 @@ class RecallCandidateOut(APIModel):
     conflicts: list[ConflictNoteOut] = Field(default_factory=list)
 
 
+class UsageOut(APIModel):
+    """What the recall actually cost.
+
+    ``cost_usd`` is null when the model has no configured price
+    (``KORTEX_LLM_PRICES``) — null means unpriced, not free.
+    """
+
+    mode: str
+    tokens_in: int
+    tokens_out: int
+    total_tokens: int
+    llm_calls: int
+    plan_steps: int
+    hops: int
+    latency_ms: float
+    cost_usd: float | None = None
+    budget_exhausted: bool = False
+
+
 class ContextBundleOut(APIModel):
     query: str
     answer: str | None
@@ -86,3 +111,4 @@ class ContextBundleOut(APIModel):
     plan_rationale: str
     hops: int
     stopped_reason: str
+    usage: UsageOut

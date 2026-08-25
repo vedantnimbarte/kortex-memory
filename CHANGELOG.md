@@ -68,6 +68,16 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   ranker fails on the PR that caused it. Floors are loose by design: it catches breakage, not
   drift.
 
+- **Budget-aware recall** — `recall` / `get_context_bundle` accept `latency_budget_ms` and
+  `token_budget`. A budget too small for an LLM planner round trip degrades to plain hybrid
+  retrieval rather than overshooting, and `plan_rationale` records why, so a fast hybrid answer is
+  distinguishable from a broken planner. The agent loop checks its remaining budget *before* each
+  hop and returns what it has; synthesis is skipped when a second model call would not fit.
+- **Cost and token reporting** — every recall response now carries `usage` with `mode`, token
+  counts, `llm_calls`, `plan_steps`, `hops`, `latency_ms`, `cost_usd` and `budget_exhausted`.
+  `cost_usd` is `null` unless the operator configures `KORTEX_LLM_PRICES`; null means unpriced,
+  not free. This also fills the gap the benchmark harness reported as zero.
+
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.
 - `search_memory` / `recall` / `get_context_bundle` responses gained a `conflicts` array per hit.
@@ -76,6 +86,11 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
 - `embed_pending` returns a result dict instead of a bare count.
 
 ### Fixed
+- **Agentic recall crashed when the embedder was unavailable at call time.** The agent loop let
+  `EmbeddingError` propagate out of a semantic-search step, so a missing optional dependency, a
+  model that would not load, or a provider outage took the whole recall down — while every other
+  retrieval path degrades to keyword-only. The step now falls back and the loop stops retrying an
+  embedder that just failed.
 - **`MissingGreenlet` on any async path that read a just-updated row.**
   `TimestampMixin.updated_at` uses `onupdate=func.now()`, a SQL expression the ORM cannot
   evaluate client-side, so after an UPDATE it marked the attribute expired; reading it then

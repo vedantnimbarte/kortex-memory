@@ -59,3 +59,17 @@ carries `embedding_state`:
 `GET /v1/admin/ingest-status` aggregates this across the caller's org (all orgs for a
 superuser) and lists recent failures. `POST /v1/admin/retry_embeddings` (superuser) requeues
 parked memories. See the [runbook](../operators/runbooks.md) for triage.
+
+## Recall budgets
+
+`POST /v1/search/recall` accepts `latency_budget_ms` and `token_budget`
+(both default 0 = unlimited). A budget too small for an LLM planner round trip
+degrades to plain hybrid retrieval instead of overshooting; `plan_rationale`
+records the reason.
+
+The response carries a `usage` object with `mode`, `tokens_in`/`tokens_out`,
+`llm_calls`, `plan_steps`, `hops`, `latency_ms`, `cost_usd` and
+`budget_exhausted`. `cost_usd` is null unless `KORTEX_LLM_PRICES` is
+configured — null means unpriced, not free.
+
+See the [MCP docs](mcp.md#budgets-and-cost-on-recall) for the full shape.

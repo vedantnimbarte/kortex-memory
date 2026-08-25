@@ -74,15 +74,13 @@ Full instructions, dataset sources, and the expected schemas are in
 
 ## Known gaps in the harness
 
-- **Token and cost accounting reports zero.** Recall responses carry no `usage`
-  field yet ([#12](https://github.com/vedantnimbarte/kortex-memory/issues/12)).
-  The harness reads `usage` when it appears rather than estimating a number it
-  cannot measure.
-- **No latency-budget sweep.** LongMemEval-V2 scores accuracy across log-scaled
-  latency budgets (its LAFS metric); that needs budget-aware recall
-  ([#12](https://github.com/vedantnimbarte/kortex-memory/issues/12)). Today the
-  harness reports a single (accuracy, latency) point per mode, which is a point
-  on that frontier rather than the frontier itself.
+- **Cost is reported only when priced.** Recall now returns `usage` with token
+  counts and latency, but `cost_usd` is null unless `KORTEX_LLM_PRICES` is
+  configured. Set it before a run if you want dollar figures in the table.
+- **No latency-budget sweep yet.** Recall accepts `latency_budget_ms`, so the
+  inputs for LongMemEval-V2's LAFS metric now exist, but the harness still
+  measures one point per mode rather than sweeping budgets to trace the
+  accuracy-latency frontier.
 
 ## Regression gate
 

@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kortex_core.db.types import MemoryLinkType, Sensitivity
+from kortex_core.embeddings.protocol import EmbeddingError
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
+from kortex_core.retrieval.budget import RecallBudget
 from kortex_core.retrieval.hybrid import HybridSearchHit
 from kortex_core.retrieval.query_plan import (
     KeywordSearch,
@@ -30,10 +32,13 @@ from kortex_core.retrieval.query_plan import (
 )
 from kortex_core.security.principal import Principal
 from kortex_core.settings import get_settings
+from kortex_core.telemetry.logging import get_logger
 from kortex_core.telemetry.tracing import span
 
 if TYPE_CHECKING:
     from kortex_core.embeddings.protocol import Embedder
+
+log = get_logger("kortex.retrieval.agent_loop")
 
 
 @dataclass(slots=True)
@@ -53,16 +58,19 @@ class AgentLoop:
         principal: Principal,
         embedder: Embedder | None = None,
         scopes: list[ScopeFilter] | None = None,
+        budget: RecallBudget | None = None,
     ):
         self._session = session
         self._principal = principal
         self._embedder = embedder
         self._scopes = scopes
+        self._budget = budget
         self._memories = MemoryRepository(session, principal=principal)
         self._links = MemoryLinkRepository(session, principal=principal)
         s = get_settings()
         self._max_hops = s.retrieval_max_hops
         self._max_candidates = s.retrieval_max_candidates
+        self._hop_reserve_ms = s.retrieval_hop_reserve_ms
         self._max_sensitivity = principal.max_sensitivity or Sensitivity.INTERNAL
 
     async def run(self, plan: QueryPlan) -> AgentLoopResult:
@@ -74,6 +82,12 @@ class AgentLoop:
         hops = 0
 
         for step in plan.steps:
+            # Checked before the hop, not after: overshooting the caller's
+            # budget and then noticing helps nobody. Whatever has been found so
+            # far is returned, which is why partial results are useful here.
+            if self._budget is not None and not self._budget.has_headroom(self._hop_reserve_ms):
+                stopped_reason = "budget_exhausted"
+                break
             if hops >= self._max_hops:
                 stopped_reason = "max_hops"
                 break
@@ -97,8 +111,20 @@ class AgentLoop:
                 if isinstance(step, SemanticSearch | KeywordSearch):
                     vector = None
                     if isinstance(step, SemanticSearch) and self._embedder is not None:
-                        vectors = await self._embedder.embed([step.query])
-                        vector = vectors[0]
+                        try:
+                            vectors = await self._embedder.embed([step.query])
+                            vector = vectors[0]
+                        except EmbeddingError as e:
+                            # The embedder can be resolvable but fail on use —
+                            # an optional dependency missing, a model that will
+                            # not load, a provider outage. Every other retrieval
+                            # path degrades to keyword-only in that case, and
+                            # this one used to raise instead, taking the whole
+                            # recall with it. Drop the embedder so the remaining
+                            # steps do not each retry a call that just failed.
+                            log.warning("agent_loop_embed_failed", error=str(e))
+                            trace.append(f"embed_failed: {e}")
+                            self._embedder = None
                     hits = await self._memories.hybrid_search(
                         query=step.query,
                         query_vector=vector,
