@@ -12,11 +12,14 @@ English project found nothing" is equally consistent with a broken fixture.
 from __future__ import annotations
 
 import pytest
-from kortex_core.db.types import MemoryKind, ScopeType
+from kortex_core.db.types import ActorKind, MemoryKind, Role, ScopeType
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
 from kortex_core.repositories.project_repo import ProjectRepository
+from kortex_core.repositories.workspace_repo import WorkspaceRepository
+from kortex_core.security.principal import Principal
 from kortex_core.services.auth_service import AuthService
 from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
+from kortex_core.services.project_service import ProjectService
 from kortex_core.services.signup_service import SignupService
 
 pytestmark = pytest.mark.integration
@@ -27,71 +30,107 @@ root as the infinitive ``décider``; the English stemmer leaves both alone and
 they stay two different tokens."""
 
 
-async def _owner(session, email: str, org: str):  # type: ignore[no-untyped-def]
-    result = await SignupService(session).register(
+async def _projects(session, email: str, org: str, configs: dict[str, str]):  # type: ignore[no-untyped-def]
+    """An owner plus one project per requested configuration, each holding the
+    same French sentence.
+
+    Fiddly for a real reason: creating a project confers no membership on it,
+    and an org owner cannot grant on a project it has no role on either. So the
+    grants go through a system principal, the way the other integration suites
+    seed tenants, and the principal is re-materialised afterwards because roles
+    resolve at materialisation time.
+    """
+    registered = await SignupService(session).register(
         email=email, password="hunter2pass", org_name=org
     )
-    return (await AuthService(session).principal_from_jwt(result.access_token)).principal
+    auth = AuthService(session)
+    principal = (await auth.principal_from_jwt(registered.access_token)).principal
 
-
-async def _project(session, principal, *, slug: str, ts_config: str):  # type: ignore[no-untyped-def]
-    """A project analysed by ``ts_config``, holding the same French sentence."""
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
-    repo = ProjectRepository(session, principal=principal)
-    project = await repo.create(workspace_id=ws.id, slug=slug, name=slug)
-    project.text_search_config = ts_config
-    await session.flush()
+    workspace = await WorkspaceRepository(session, principal=principal).get_by_id(ws.id)
+    assert workspace is not None
 
-    await MemoryService(session, principal).write(
-        CreateMemoryInput(
+    system = Principal(
+        actor_id=0,
+        actor_kind=ActorKind.SYSTEM,
+        org_id=principal.org_id,
+        is_superuser=True,
+    )
+    from kortex_core.services.user_service import UserService
+
+    created: dict[str, int] = {}
+    for slug, ts_config in configs.items():
+        project = await ProjectService(session, principal).create(
+            workspace_public_id=workspace.public_id, slug=slug, name=slug
+        )
+        assert project is not None
+        project.text_search_config = ts_config
+        await UserService(session, system).grant(
+            user_id=principal.actor_id,
             scope_type=ScopeType.PROJECT,
             scope_id=project.id,
-            title="Rétention",
-            body=FRENCH_BODY,
-            kind=MemoryKind.FACT,
+            role=Role.OWNER,
         )
-    )
+        created[slug] = project.id
     await session.flush()
-    return project
+    principal = (await auth.principal_from_jwt(registered.access_token)).principal
+
+    svc = MemoryService(session, principal)
+    for project_id in created.values():
+        await svc.write(
+            CreateMemoryInput(
+                scope_type=ScopeType.PROJECT,
+                scope_id=project_id,
+                title="Rétention",
+                body=FRENCH_BODY,
+                kind=MemoryKind.FACT,
+            )
+        )
+    await session.flush()
+    return principal, created
 
 
-async def _search(session, principal, project, query: str) -> int:  # type: ignore[no-untyped-def]
-    """Number of hits for ``query`` in ``project`` -- BM25 only, no embedder."""
+async def _search(session, principal, project_id: int, query: str) -> int:  # type: ignore[no-untyped-def]
+    """Number of hits for ``query`` in a project -- BM25 only, no embedder."""
     hits = await MemoryRepository(session, principal=principal).hybrid_search(
         query=query,
         query_vector=None,
-        scopes=[ScopeFilter(scope_type=ScopeType.PROJECT, scope_id=project.id)],
+        scopes=[ScopeFilter(scope_type=ScopeType.PROJECT, scope_id=project_id)],
     )
     return len(hits)
 
 
 async def test_a_french_project_stems_french_and_english_does_not(session) -> None:  # type: ignore[no-untyped-def]
-    principal = await _owner(session, "fr@acme.io", "Bonjour SA")
-    french = await _project(session, principal, slug="fr", ts_config="french")
-    english = await _project(session, principal, slug="en", ts_config="english")
+    principal, projects = await _projects(
+        session, "fr@acme.io", "Bonjour SA", {"fr": "french", "en": "english"}
+    )
 
     # Control first: the English project's row *is* stored and searchable. Only
     # the inflected form defeats it.
-    assert await _search(session, principal, english, "décidé") == 1
+    assert await _search(session, principal, projects["en"], "décidé") == 1
 
-    assert await _search(session, principal, french, "décider") == 1
-    assert await _search(session, principal, english, "décider") == 0
+    assert await _search(session, principal, projects["fr"], "décider") == 1
+    assert await _search(session, principal, projects["en"], "décider") == 0
 
 
 async def test_changing_the_configuration_re_stems_what_is_already_stored(session) -> None:  # type: ignore[no-untyped-def]
     """A setting that only applied to future writes would leave a project's
     corpus half-analysed one way and half the other, with nothing to say which
     memories were which."""
-    principal = await _owner(session, "fr2@acme.io", "Bonjour Deux")
-    project = await _project(session, principal, slug="mixed", ts_config="english")
-    assert await _search(session, principal, project, "décider") == 0
+    principal, projects = await _projects(
+        session, "fr2@acme.io", "Bonjour Deux", {"mixed": "english"}
+    )
+    project_id = projects["mixed"]
+    assert await _search(session, principal, project_id, "décider") == 0
 
+    project = await ProjectRepository(session, principal=principal).get_by_id(project_id)
+    assert project is not None
     project.text_search_config = "french"
     await MemoryRepository(session, principal=principal).reanalyse_scope(
         scope_type=ScopeType.PROJECT,
-        scope_id=project.id,
+        scope_id=project_id,
         ts_config="french",
     )
     await session.flush()
 
-    assert await _search(session, principal, project, "décider") == 1
+    assert await _search(session, principal, project_id, "décider") == 1

@@ -24,7 +24,6 @@ from kortex_core.repositories.base import BaseRepository
 from kortex_core.retrieval.hybrid import HybridSearchHit, rrf_fuse
 from kortex_core.retrieval.text_search import DEFAULT_TS_CONFIG, config_for_scopes
 from kortex_core.settings import get_settings
-from kortex_core.skills.trust_policy import trusts_allowed_for
 
 _SENSITIVITY_RANK = {
     Sensitivity.PUBLIC.value: 1,
@@ -827,6 +826,12 @@ class MemoryRepository(BaseRepository[Memory]):
         gov_filter_sql = "AND m.review_status = 'approved'"
         cfg = get_settings()
         if cfg.trust_filtering:
+            # Imported here, not at module scope: kortex_core.skills pulls in
+            # kortex_core.services, which imports this module back, so the
+            # module-level version made `import memory_repo` fail whenever it
+            # was the first kortex import in a process.
+            from kortex_core.skills.trust_policy import trusts_allowed_for
+
             allowed_trust = trusts_allowed_for(max_sensitivity)
             if allowed_trust:
                 trust_placeholders = ", ".join(f":trust_{i}" for i in range(len(allowed_trust)))
