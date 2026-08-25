@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
 
@@ -16,3 +18,15 @@ naming_convention: dict[str, str] = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=naming_convention)
+
+    # ``TimestampMixin.updated_at`` uses ``onupdate=func.now()`` — a SQL
+    # expression the ORM cannot evaluate client-side, so after any UPDATE it
+    # marks the attribute expired. Reading it then triggers a lazy refresh,
+    # which under asyncio raises MissingGreenlet: sync IO in an async context.
+    #
+    # That made every async path that serialises a just-updated row fail —
+    # MCP `end_session` and `update_memory` among them. `eager_defaults` makes
+    # Postgres return the generated value with the UPDATE itself (RETURNING),
+    # so the attribute is never expired and the database stays the single
+    # clock source for both timestamps.
+    __mapper_args__: dict[str, Any] = {"eager_defaults": True}  # noqa: RUF012
