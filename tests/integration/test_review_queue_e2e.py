@@ -12,11 +12,20 @@ asks about.
 from __future__ import annotations
 
 import pytest
-from kortex_core.db.types import MemoryKind, MemorySource, ReviewMode, ReviewStatus, Role, ScopeType
+from kortex_core.db.types import (
+    ActorKind,
+    MemoryKind,
+    MemorySource,
+    ReviewMode,
+    ReviewStatus,
+    Role,
+    ScopeType,
+)
 from kortex_core.models.audit import AuditLog
 from kortex_core.repositories.memory_repo import MemoryRepository
 from kortex_core.repositories.project_repo import ProjectRepository
 from kortex_core.repositories.workspace_repo import WorkspaceRepository
+from kortex_core.security.principal import Principal
 from kortex_core.services.auth_service import AuthService
 from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
 from kortex_core.services.project_service import ProjectService
@@ -175,10 +184,11 @@ async def test_gating_is_per_project(session) -> None:  # type: ignore[no-untype
     """A scratch project and one holding customer commitments should not be
     forced to share a setting.
 
-    Registers inline rather than through the shared helper because it needs the
-    access token: creating a project grants no role on it (there is no cascade
-    from org owner), so the principal has to be re-materialised after the
-    grant to pick the new membership up.
+    The setup is fiddly for a real reason: creating a project confers no
+    membership on it, and an org owner cannot grant on a project it has no
+    role on either. So the grant is done with a system principal, the way the
+    other integration suites seed tenants, and the caller's principal is then
+    re-materialised because roles resolve at materialisation time.
     """
     registered = await SignupService(session).register(
         email="rev6@acme.io", password="hunter2pass", org_name="Review Co 6"
@@ -194,7 +204,14 @@ async def test_gating_is_per_project(session) -> None:  # type: ignore[no-untype
         workspace_public_id=workspace.public_id, slug="open", name="Open"
     )
     assert open_ is not None
-    await UserService(session, principal).grant(
+
+    system = Principal(
+        actor_id=0,
+        actor_kind=ActorKind.SYSTEM,
+        org_id=principal.org_id,
+        is_superuser=True,
+    )
+    await UserService(session, system).grant(
         user_id=principal.actor_id,
         scope_type=ScopeType.PROJECT,
         scope_id=open_.id,
