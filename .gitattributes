@@ -1,0 +1,16 @@
+# Default: let git normalise text in the repository, platform-native on checkout.
+* text=auto
+
+# These are read by Linux inside containers. A CRLF checkout on Windows would
+# produce `bad interpreter: /usr/bin/env bash^M` at container start, and the
+# Dockerfile copies straight from the working tree.
+*.sh text eol=lf
+docker/local/entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+
+# Lockfiles and snapshots: never touched by hand, keep them byte-stable.
+uv.lock -text
+*.png binary
+*.jpg binary
+*.pdf binary

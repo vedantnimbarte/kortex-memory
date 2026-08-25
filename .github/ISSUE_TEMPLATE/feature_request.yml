@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose something Kortex should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: >
+        Describe the situation you are actually in, not the feature. The best
+        requests here have come from someone hitting a wall, not from a
+        comparison table.
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Existing tools, workarounds, or why the current API doesn't fit.
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before filing
+      options:
+        - label: I checked [docs/implementation-plan.md](../../docs/implementation-plan.md) — this isn't already planned

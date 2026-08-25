@@ -10,6 +10,21 @@ memory layer in under 15 minutes.
 
 ---
 
+## 0. Pick a stack
+
+| Way | Containers | Use it when |
+|---|---|---|
+| `make local-run` | 1 (everything bundled) | Evaluating Kortex, or a solo machine. Nothing to configure. |
+| `make minimal-up` | 3 (postgres, redis, app) | You want the database separable — backups, inspection, `psql`. |
+| `make dev` | 9 (full stack + MinIO + web console) | Working *on* Kortex, or you need attachments on S3 and the web console. |
+
+The rest of this guide covers the full stack, because that is what you want
+when developing Kortex itself. The one-container image is documented in the
+[README](README.md#try-it-in-one-command); it is for evaluation and solo use,
+not production.
+
+---
+
 ## 1. Prerequisites
 
 | Tool | Version | Why |

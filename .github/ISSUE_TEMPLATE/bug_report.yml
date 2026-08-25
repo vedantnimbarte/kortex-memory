@@ -1,0 +1,55 @@
+name: Bug report
+description: Something behaves differently than documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a security problem, please **do not** file it here — use the
+        [Security tab](https://github.com/vedantnimbarte/kortex-memory/security)
+        instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. kortex init claude-code
+        2. remember "..."
+        3. recall "..." returns nothing
+    validations: { required: true }
+  - type: textarea
+    id: doctor
+    attributes:
+      label: kortex doctor output
+      description: >
+        Run `kortex doctor` and paste the table. It checks the whole write path
+        and usually identifies the layer at fault. Redact API keys.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: v0.1.0, or the commit sha
+    validations: { required: true }
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How is it running
+      options:
+        - docker compose (make dev)
+        - local processes (uv run)
+        - Kubernetes / Helm
+        - other
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: API, worker, or MCP logs around the failure. Redact secrets.
+      render: shell

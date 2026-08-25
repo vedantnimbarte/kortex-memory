@@ -57,6 +57,36 @@ kortex-memory/
 
 ---
 
+# Try it in one command
+
+```bash
+docker run -d --name kortex-local   -p 8000:8000 -p 8765:8765   -v kortex-data:/data   kortex/kortex:local
+```
+
+Postgres + pgvector, Redis, the API, the MCP server, the worker and beat, in
+one container with a persistent volume. No compose file, no checkout, no
+`.env`. Then wire an agent to it:
+
+```bash
+kortex init claude-code
+```
+
+First start downloads the embedding model (~1.3 GB); until it lands, memories
+stay `pending` and recall falls back to keyword search. `kortex admin
+ingest-status` shows the queue draining, and `kortex doctor` tells you when
+the whole write path is working.
+
+**This image is for evaluation and solo use.** Everything shares one failure
+domain and Postgres runs with trust auth on loopback. For a real deployment
+use [deploy/helm/kortex](deploy/helm) — or the three-container middle path,
+which keeps Postgres and Redis as their own services:
+
+```bash
+docker compose -f docker/compose.minimal.yaml up -d
+```
+
+---
+
 # Running everything locally
 
 The full stack — Postgres, Redis, MinIO, API, MCP, worker, beat, and the web
