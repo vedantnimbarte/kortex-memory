@@ -40,6 +40,7 @@ def _memory_out(m: Memory) -> dict[str, Any]:
         "updated_at": m.updated_at,
         "last_accessed_at": m.last_accessed_at,
         "expires_at": m.expires_at,
+        "trust": m.trust,
         "metadata": m.metadata_,
     }
 
@@ -81,7 +82,12 @@ async def _remember(args: dict[str, Any]) -> dict[str, Any]:
             embed_inline=bool(args.get("embed_inline", False)),
             force=bool(args.get("force", False)),
         )
-        return {**_memory_out(result.memory), "deduped": result.deduped}
+        return {
+            **_memory_out(result.memory),
+            "deduped": result.deduped,
+            "quarantined": result.quarantined,
+            "pii_flags": result.pii_flags,
+        }
 
 
 _REMEMBER = ToolDef(
@@ -89,7 +95,10 @@ _REMEMBER = ToolDef(
     description=(
         "Store a new atomic memory (fact, preference, decision, etc.) at a "
         "given scope. Writing the same content twice returns the existing "
-        "memory with `deduped: true` instead of storing a copy. "
+        "memory with `deduped: true` instead of storing a copy. Content from "
+        "low-trust sources that reads as instructions to a model is quarantined "
+        "(`quarantined: true`) and will not appear in any recall until an "
+        "operator releases it. "
         "The memory is embedded asynchronously by the worker; pass "
         "embed_inline=true to embed during the call (slower, useful for tests)."
     ),

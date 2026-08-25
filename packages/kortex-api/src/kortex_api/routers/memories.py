@@ -60,7 +60,13 @@ async def create_memory(
     )
     await session.commit()
     out = MemoryOut.model_validate(result.memory)
-    return out.model_copy(update={"deduped": result.deduped})
+    return out.model_copy(
+        update={
+            "deduped": result.deduped,
+            "quarantined": result.quarantined,
+            "pii_flags": result.pii_flags,
+        }
+    )
 
 
 @router.get("", response_model=list[MemoryOut])

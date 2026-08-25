@@ -96,6 +96,22 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   because it serves whatever model was pulled. The width now lives in one constant that the models
   and the guard share, rather than as a literal in three model files.
 
+- **Memory governance: PII detection, provenance trust, and prompt-injection quarantine.** A
+  memory layer is a prompt-injection *persistence* layer — ordinary injection lasts one turn, but
+  injection that gets stored is re-injected into every session that retrieves it. Three
+  non-model defences, none of which can be talked out of their opinion:
+  - Every write is scanned for personal and secret data. Checksummed where one exists (Luhn for
+    cards, mod-97 for IBANs, SSA structural rules), because a false positive under redaction
+    destroys data irreversibly. `pii_policy` chooses what a finding does: `tag` (default — record
+    counts and change nothing), `redact`, or `escalate` (raise sensitivity so existing RBAC
+    restricts reads). `pii_flags` stores counts by kind, never values.
+  - Memories get a `trust` level from `source_type`. Low-trust content — fetched documents, tool
+    output — is withheld from recalls made at confidential/secret sensitivity.
+  - Low-trust content that reads as instructions to a model is **quarantined**: stored, but absent
+    from every retrieval path until an operator releases it via `GET /v1/admin/quarantine` and
+    `POST /v1/admin/quarantine/{id}/release`. Only low-trust content is scanned, so a person
+    documenting an attack in their own notes is not quarantined for it.
+
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.
 - `search_memory` / `recall` / `get_context_bundle` responses gained a `conflicts` array per hit.

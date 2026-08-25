@@ -27,6 +27,7 @@ from kortex_core.db.types import (
     MemoryLinkType,
     MemorySource,
     MemoryTier,
+    MemoryTrust,
     Sensitivity,
 )
 from kortex_core.embeddings.dimensions import EMBEDDING_DIM
@@ -53,6 +54,12 @@ memory_source_enum = ENUM(
     name="memory_source",
     create_type=False,
 )
+memory_trust_enum = ENUM(
+    *[t.value for t in MemoryTrust],
+    name="memory_trust",
+    create_type=False,
+)
+
 memory_link_type_enum = ENUM(
     *[lt.value for lt in MemoryLinkType],
     name="memory_link_type",
@@ -72,6 +79,14 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         ),
         # The conflict scan runs every minute and is almost always empty; a
         # partial index keeps it from touching the table at all.
+        # Quarantined memories are rare, and an operator listing them should
+        # not seq-scan the largest table to find them.
+        Index(
+            "ix_memories_quarantined",
+            "org_id",
+            "quarantined_at",
+            postgresql_where=text("quarantined_at IS NOT NULL"),
+        ),
         # Dedup looks up by (tenant, scope, fingerprint) on every write, so it
         # has to be indexed or it is a seq scan per memory created.
         Index(
@@ -146,6 +161,21 @@ class Memory(Base, PublicIdMixin, TimestampMixin, SoftDeleteMixin):
         ),
         nullable=False,
     )
+
+    trust: Mapped[str] = mapped_column(
+        memory_trust_enum, nullable=False, default=MemoryTrust.MEDIUM.value
+    )
+    """Derived from source_type at write time. Low-trust memories are withheld
+    from confidential/secret recall."""
+    pii_flags: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    """Counts by kind, never the matched values — a column holding the secrets
+    it found would be a worse leak than the one it reports."""
+    quarantined_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Set when low-trust content reads as instructions to the model. Excluded
+    from every retrieval path until an operator releases it."""
+    quarantine_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     """SHA-256 of the normalised title+body, used to fold away verbatim

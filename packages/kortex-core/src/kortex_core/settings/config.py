@@ -159,6 +159,29 @@ class KortexSettings(BaseSettings):
     """Fold a byte-identical rewrite into the existing memory instead of storing
     a second copy. Callers can bypass it per write with ``force``."""
 
+    # --- Memory governance (PII + prompt-injection persistence) ---
+    pii_detection: bool = True
+    """Scan every write for personal and secret data. Detection is regex plus
+    checksums, never a model call, so it cannot fail the write path."""
+    pii_policy: Literal["tag", "redact", "escalate"] = "tag"
+    """What a finding does:
+
+    * ``tag`` — record counts in ``pii_flags`` and change nothing else.
+    * ``redact`` — replace the matched spans before storing. Irreversible.
+    * ``escalate`` — store intact but raise sensitivity to ``confidential``,
+      so the existing RBAC restricts who can read it.
+
+    ``tag`` is the default deliberately: an upgrade must not silently mutate or
+    hide memories an operator already relies on. See docs/operators/runbooks.md
+    before changing it.
+    """
+    trust_filtering: bool = True
+    """Keep low-trust memories (fetched documents, tool output) out of recalls
+    made at confidential/secret sensitivity."""
+    injection_quarantine: bool = True
+    """Withhold low-trust memories that read as instructions to the model until
+    an operator reviews them."""
+
     # --- Memory tiers / decay ---
     decay_lambda_short: float = 0.30
     decay_lambda_mid: float = 0.05
