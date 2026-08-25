@@ -128,7 +128,7 @@ Every decision writes an audit row (`memory.review.approved` /
 ### Turning gating off
 
 ```bash
-curl -X PATCH "$KORTEX_API_URL/v1/projects/$PROJECT_ID/review-mode" \
+curl -X PATCH "$KORTEX_API_URL/v1/workspaces/$WORKSPACE_PUBLIC_ID/projects/$PROJECT_PUBLIC_ID/review-mode" \
   -H "X-API-Key: $KORTEX_API_KEY" -H 'content-type: application/json' \
   -d '{"review_mode": "off"}'
 ```
