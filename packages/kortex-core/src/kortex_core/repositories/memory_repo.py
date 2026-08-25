@@ -14,6 +14,7 @@ from kortex_core.db.types import (
     MemoryKind,
     MemorySource,
     MemoryTier,
+    ReviewStatus,
     ScopeType,
     Sensitivity,
 )
@@ -97,8 +98,9 @@ class MemoryRepository(BaseRepository[Memory]):
         content_hash: str | None = None,
         trust: str = "medium",
         pii_flags: dict | None = None,
-        quarantined_at: dt.datetime | None = None,
-        quarantine_reason: str | None = None,
+        review_status: str = "approved",
+        review_reason: str | None = None,
+        confidence: float | None = None,
     ) -> Memory:
         memory = Memory(
             org_id=self.principal.org_id,
@@ -121,8 +123,9 @@ class MemoryRepository(BaseRepository[Memory]):
             content_hash=content_hash,
             trust=trust,
             pii_flags=dict(pii_flags) if pii_flags else {},
-            quarantined_at=quarantined_at,
-            quarantine_reason=quarantine_reason,
+            review_status=review_status,
+            review_reason=review_reason,
+            confidence=confidence,
         )
         self._session.add(memory)
         await self._session.flush()
@@ -240,7 +243,7 @@ class MemoryRepository(BaseRepository[Memory]):
         stmt = (
             self.tenant_query()
             .where(Memory.deleted_at.is_(None))
-            .where(Memory.quarantined_at.is_(None))
+            .where(Memory.review_status == ReviewStatus.APPROVED.value)
         )
         if scope:
             stmt = stmt.where(
@@ -521,23 +524,70 @@ class MemoryRepository(BaseRepository[Memory]):
 
     # ---- governance ----
 
-    async def list_quarantined(self, *, limit: int = 50) -> list[Memory]:
-        """Memories withheld pending review, newest first."""
+    async def list_pending_review(self, *, limit: int = 50, offset: int = 0) -> list[Memory]:
+        """The review inbox, oldest first.
+
+        Oldest first on purpose: a queue worked newest-first leaves its oldest
+        items forever, and those are the ones that have been invisible to
+        recall the longest.
+        """
         stmt = (
             self.tenant_query()
             .where(Memory.deleted_at.is_(None))
-            .where(Memory.quarantined_at.is_not(None))
-            .order_by(Memory.quarantined_at.desc())
+            .where(Memory.review_status == ReviewStatus.PENDING.value)
+            .order_by(Memory.created_at)
             .limit(limit)
+            .offset(offset)
         )
         return list((await self._session.execute(stmt)).scalars().all())
 
-    async def release_quarantine(self, memory: Memory) -> Memory:
-        """Let a reviewed memory back into retrieval."""
-        memory.quarantined_at = None
-        memory.quarantine_reason = None
+    async def count_pending_review(self) -> int:
+        stmt = (
+            self.tenant_query(func.count(Memory.id))
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.review_status == ReviewStatus.PENDING.value)
+        )
+        return int((await self._session.execute(stmt)).scalar_one())
+
+    async def set_review_status(
+        self,
+        memory: Memory,
+        *,
+        status: ReviewStatus,
+        reviewer_id: int | None,
+    ) -> Memory:
+        """Record a decision. Who and when are kept, not just the outcome —
+        a review trail that cannot say who approved something is not a trail."""
+        memory.review_status = status.value
+        memory.reviewed_at = dt.datetime.now(tz=dt.UTC)
+        memory.reviewed_by = reviewer_id
         await self._session.flush()
         return memory
+
+    async def find_similar_for_review(self, memory: Memory, *, limit: int = 3) -> list[Memory]:
+        """Approved memories in the same scope that look like this one.
+
+        Gives the reviewer the context the decision actually needs: whether
+        this is new, or the fourth restatement of something already stored.
+        Falls back to keyword overlap when the memory has no embedding yet,
+        which is the common case at review time.
+        """
+        if memory.embedding is not None:
+            candidates = await self.list_conflict_candidates(
+                memory, limit=limit, min_similarity=0.5
+            )
+            return [m for m, _ in candidates]
+        terms = " ".join(memory.body.split()[:8])
+        if not terms.strip():
+            return []
+        hits = await self.hybrid_search(
+            query=terms,
+            query_vector=None,
+            scopes=[ScopeFilter(scope_type=ScopeType(memory.scope_type), scope_id=memory.scope_id)],
+            limit=limit + 1,
+        )
+        ids = [h.memory_id for h in hits if h.memory_id != memory.id][:limit]
+        return await self.list_by_ids(ids)
 
     # ---- deduplication ----
 
@@ -635,7 +685,7 @@ class MemoryRepository(BaseRepository[Memory]):
             SELECT m.id, 1 - (m.embedding <=> CAST(:qv AS vector)) AS similarity
             FROM memories m
             WHERE m.deleted_at IS NULL
-              AND m.quarantined_at IS NULL
+              AND m.review_status = 'approved'
               AND m.embedding IS NOT NULL
               AND m.org_id = :org_id
               AND m.scope_type = :scope_type
@@ -736,7 +786,7 @@ class MemoryRepository(BaseRepository[Memory]):
         # every retrieval path — the whole point is that stored injections stop
         # being re-injected — and a recall made at confidential/secret
         # sensitivity does not draw on content the system did not author.
-        gov_filter_sql = "AND m.quarantined_at IS NULL"
+        gov_filter_sql = "AND m.review_status = 'approved'"
         cfg = get_settings()
         if cfg.trust_filtering:
             allowed_trust = trusts_allowed_for(max_sensitivity)

@@ -68,11 +68,30 @@ re-confirmed memory from fading. Metadata is merged into the survivor.
 Matching is exact on normalised content: whitespace is collapsed and Unicode is
 folded to NFKC, but **case is preserved** and **paraphrases are not matched** —
 "We use Redis for the queue" and "the queue runs on Redis" are two memories.
-Catching those needs a vector comparison, which needs an embedding, which does
-not exist yet at write time.
 
 Pass `force: true` for a deliberate second copy. Turn the whole thing off with
 `KORTEX_DEDUP_ON_WRITE=false`.
+
+## Writes held for review
+
+A `remember` can come back with `pending_review: true`. The memory is stored
+but **no recall will surface it** until a person approves it in the console
+(`/app/review`) or via `POST /v1/review/{id}/approve`.
+
+Two things put a write there, and `review_reason` says which:
+
+| Cause | When |
+|---|---|
+| Suspicion | Low-trust content (fetched documents, tool output) that reads as instructions to a model. |
+| Gating | The project's `review_mode` is `all`, or it is `low_confidence` and the write reported a `confidence` below the threshold. |
+
+Pass `confidence` (0–1) when you are unsure of something. Omit it when you are
+not — an unstated confidence is treated as certain, so an agent that never
+reports one is never gated on it.
+
+Suspicion is checked regardless of `review_mode`. A project turning gating off
+is saying it trusts its writers, not that it wants prompt injections from
+fetched pages stored where its agents will read them.
 
 ## Budgets and cost on recall
 

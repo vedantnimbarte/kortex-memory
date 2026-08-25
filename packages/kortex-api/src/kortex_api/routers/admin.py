@@ -7,7 +7,6 @@ queue, not request handlers.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 from fastapi import APIRouter, status
@@ -36,22 +35,6 @@ class EmbedFailureOut(APIModel):
     attempts: int
     error: str | None
     failed_at: str
-
-
-class QuarantinedOut(APIModel):
-    """A memory withheld because low-trust content read as instructions.
-
-    ``body_preview`` is truncated on purpose: the point of review is to decide
-    whether the content is hostile, which does not require reproducing all of
-    it into another log or console.
-    """
-
-    public_id: str
-    title: str
-    body_preview: str
-    source_type: str
-    reason: str
-    quarantined_at: str
 
 
 class IngestStatusOut(APIModel):
@@ -190,58 +173,3 @@ async def retry_embeddings(
     """
     _require_superuser(principal)
     return _dispatch("kortex.embedding.retry_failed", org_id)
-
-
-@router.get("/quarantine", response_model=list[QuarantinedOut])
-async def list_quarantine(principal: PrincipalDep, session: SessionDep) -> list[QuarantinedOut]:
-    """Memories withheld from retrieval pending review.
-
-    Org-scoped for ordinary callers. Anything listed here was ingested from a
-    low-trust source and matched a prompt-injection heuristic — it is stored,
-    but no recall will surface it until it is released.
-    """
-    from kortex_core.repositories.memory_repo import MemoryRepository
-
-    repo = MemoryRepository(session, principal=principal)
-    return [
-        QuarantinedOut(
-            public_id=str(m.public_id),
-            title=m.title,
-            body_preview=m.body[:280],
-            source_type=m.source_type,
-            reason=m.quarantine_reason or "",
-            quarantined_at=m.quarantined_at.isoformat() if m.quarantined_at else "",
-        )
-        for m in await repo.list_quarantined(limit=50)
-    ]
-
-
-@router.post("/quarantine/{public_id}/release", response_model=AdminTaskOut)
-async def release_quarantine(
-    public_id: uuid.UUID, principal: PrincipalDep, session: SessionDep
-) -> AdminTaskOut:
-    """Let a reviewed memory back into retrieval.
-
-    Deliberately one at a time and superuser-only: releasing in bulk is how a
-    review step becomes a rubber stamp.
-    """
-    _require_superuser(principal)
-    from kortex_core.repositories.memory_repo import MemoryRepository
-
-    repo = MemoryRepository(session, principal=principal)
-    memory = await repo.get_by_public_id(public_id)
-    if memory is None or memory.quarantined_at is None:
-        return AdminTaskOut(
-            task="quarantine.release",
-            task_id=None,
-            dispatched=False,
-            detail="no quarantined memory with that id",
-        )
-    await repo.release_quarantine(memory)
-    await session.commit()
-    return AdminTaskOut(
-        task="quarantine.release",
-        task_id=str(public_id),
-        dispatched=True,
-        detail="released into retrieval",
-    )

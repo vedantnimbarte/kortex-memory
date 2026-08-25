@@ -70,6 +70,28 @@ class MemoryTrust(str, enum.Enum):
     LOW = "low"
 
 
+class ReviewStatus(str, enum.Enum):
+    """Whether a memory is visible to recall.
+
+    Only ``approved`` is retrievable. ``pending`` covers both held-for-quality
+    and held-for-suspicion, because the outcome is identical and two exclusion
+    filters would be two things to keep in step.
+    """
+
+    APPROVED = "approved"
+    PENDING = "pending"
+    REJECTED = "rejected"
+
+
+class ReviewMode(str, enum.Enum):
+    """Per-project gating. ``off`` is the default: a memory layer that makes
+    every fact wait on a human is not solving the problem it exists for."""
+
+    OFF = "off"
+    LOW_CONFIDENCE = "low_confidence"
+    ALL = "all"
+
+
 class MemoryLinkType(str, enum.Enum):
     RELATED = "related"
     DERIVED_FROM = "derived_from"

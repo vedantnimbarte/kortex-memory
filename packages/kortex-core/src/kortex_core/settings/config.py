@@ -178,6 +178,9 @@ class KortexSettings(BaseSettings):
     trust_filtering: bool = True
     """Keep low-trust memories (fetched documents, tool output) out of recalls
     made at confidential/secret sensitivity."""
+    review_confidence_threshold: float = 0.5
+    """Below this, a project in ``low_confidence`` review mode holds the write.
+    Only consulted when the writer actually reported a confidence."""
     injection_quarantine: bool = True
     """Withhold low-trust memories that read as instructions to the model until
     an operator reviews them."""
