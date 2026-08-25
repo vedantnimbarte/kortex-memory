@@ -1,0 +1,68 @@
+# The middle path: three containers instead of nine.
+#
+#   docker compose -f docker/compose.minimal.yaml up -d
+#
+# Postgres and Redis run as their own services (so they can be backed up,
+# scaled, or replaced), while the API, MCP server, worker and beat share one
+# app container built from docker/local.Dockerfile with the bundled
+# Postgres/Redis switched off.
+#
+# Dropped compared with docker/compose.yaml: MinIO and its init job
+# (attachments use the filesystem backend here) and the web console. Use the
+# full compose file when you need those, and deploy/helm/kortex in production.
+
+name: kortex-minimal
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: kortex
+      POSTGRES_PASSWORD: kortex
+      POSTGRES_DB: kortex
+    ports:
+      - "5432:5432"
+    volumes:
+      - kortex-min-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kortex -d kortex"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/local.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Use the sibling services rather than the bundled ones.
+      KORTEX_EMBEDDED_SERVICES: "0"
+      KORTEX_DATABASE_URL: postgresql+asyncpg://kortex:kortex@postgres:5432/kortex
+      KORTEX_REDIS_URL: redis://redis:6379/0
+      KORTEX_STORAGE_BACKEND: fs
+      KORTEX_FS_STORAGE_ROOT: /data/blobs
+      KORTEX_ENV: development
+      KORTEX_LOG_JSON: "false"
+    ports:
+      - "8000:8000"
+      - "8765:8765"
+    volumes:
+      - kortex-min-data:/data
+
+volumes:
+  kortex-min-pg:
+  kortex-min-data:

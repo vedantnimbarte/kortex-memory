@@ -47,6 +47,15 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   `kortex_embed_oldest_pending_seconds` on `/metrics` (refreshed on scrape, cached 15s), with
   `KortexEmbedFailures` / `KortexEmbedStalled` / `KortexEmbedPendingGrowing` alert rules and three
   new Grafana panels.
+- **One-container local mode** — `docker run kortex/kortex:local` brings up Postgres + pgvector,
+  Redis, the API, the MCP server, the worker and beat in a single container with a persistent
+  volume, no checkout or compose file required. Attachments use the filesystem backend, so MinIO
+  is gone from this path; a JWT secret is generated on first boot and persisted, so nobody
+  evaluates Kortex on the insecure built-in default. `docker/compose.minimal.yaml` reuses the same
+  image as a three-container stack with Postgres and Redis kept separate. Both are for evaluation
+  and solo use, not production.
+- **Repo hygiene** — `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue forms, and a PR
+  template. `tests/e2e/` now exists, as the README has claimed since v0.1.
 
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.
@@ -56,6 +65,11 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
 - `embed_pending` returns a result dict instead of a bare count.
 
 ### Fixed
+- `docs/mkdocs.yml` pointed `repo_url` at `github.com/anthropic/kortex-memory`, and did not
+  exclude the internal strategy documents — mkdocs publishes every page it finds in `docs_dir`
+  regardless of the nav, so the market research and implementation plan would have shipped to a
+  public site.
+- Dockerfiles are now built on pull requests. Nothing validated them until after merge to main.
 - `tests/conftest.py` auto-marked tests by directory using a POSIX path check, so on Windows
   `pytest -m unit` silently selected only the few files carrying an explicit `pytestmark`.
 
