@@ -856,13 +856,17 @@ class MemoryRepository(BaseRepository[Memory]):
             vector_ids = [int(r[0]) for r in rows]
 
         # --- BM25-style ranking ---
+        # ``CAST(:ts_config AS regconfig)`` and not ``:ts_config::regconfig``:
+        # SQLAlchemy's bind-param regex skips a name followed by a colon, so
+        # the postgres cast shorthand leaves the parameter unbound and the
+        # statement fails to parse.
         b_sql = text(
             f"""
             SELECT m.id,
-                   ts_rank_cd(m.tsv, plainto_tsquery(:ts_config::regconfig, :q)) AS rank
+                   ts_rank_cd(m.tsv, plainto_tsquery(CAST(:ts_config AS regconfig), :q)) AS rank
             FROM memories m
             WHERE m.deleted_at IS NULL
-              AND m.tsv @@ plainto_tsquery(:ts_config::regconfig, :q)
+              AND m.tsv @@ plainto_tsquery(CAST(:ts_config AS regconfig), :q)
               AND m.sensitivity IN ({sens_placeholders})
               {gov_filter_sql}
               {org_filter_sql}

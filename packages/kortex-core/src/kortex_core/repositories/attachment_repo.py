@@ -298,11 +298,11 @@ class AttachmentChunkRepository(BaseRepository[AttachmentChunk]):
         b_sql = text(
             f"""
             SELECT c.id,
-                   ts_rank_cd(c.tsv, plainto_tsquery(:ts_config::regconfig, :q)) AS rank
+                   ts_rank_cd(c.tsv, plainto_tsquery(CAST(:ts_config AS regconfig), :q)) AS rank
             FROM attachment_chunks c
             JOIN attachments a ON a.id = c.attachment_id
             WHERE a.deleted_at IS NULL
-              AND c.tsv @@ plainto_tsquery(:ts_config::regconfig, :q)
+              AND c.tsv @@ plainto_tsquery(CAST(:ts_config AS regconfig), :q)
               AND a.sensitivity IN ({sens_placeholders})
               {org_filter_sql}
               {scope_filter_sql}
