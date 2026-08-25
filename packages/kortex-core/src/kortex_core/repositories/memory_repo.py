@@ -22,6 +22,7 @@ from kortex_core.models.memory import Memory
 from kortex_core.repositories.base import BaseRepository
 from kortex_core.retrieval.hybrid import HybridSearchHit, rrf_fuse
 from kortex_core.settings import get_settings
+from kortex_core.skills.trust_policy import trusts_allowed_for
 
 _SENSITIVITY_RANK = {
     Sensitivity.PUBLIC.value: 1,
@@ -94,6 +95,10 @@ class MemoryRepository(BaseRepository[Memory]):
         embedding_model: str | None = None,
         created_by: int | None = None,
         content_hash: str | None = None,
+        trust: str = "medium",
+        pii_flags: dict | None = None,
+        quarantined_at: dt.datetime | None = None,
+        quarantine_reason: str | None = None,
     ) -> Memory:
         memory = Memory(
             org_id=self.principal.org_id,
@@ -114,6 +119,10 @@ class MemoryRepository(BaseRepository[Memory]):
             metadata_=dict(metadata) if metadata else {},
             expires_at=expires_at,
             content_hash=content_hash,
+            trust=trust,
+            pii_flags=dict(pii_flags) if pii_flags else {},
+            quarantined_at=quarantined_at,
+            quarantine_reason=quarantine_reason,
         )
         self._session.add(memory)
         await self._session.flush()
@@ -228,7 +237,11 @@ class MemoryRepository(BaseRepository[Memory]):
         offset: int = 0,
         max_sensitivity: Sensitivity | None = None,
     ) -> list[Memory]:
-        stmt = self.tenant_query().where(Memory.deleted_at.is_(None))
+        stmt = (
+            self.tenant_query()
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.quarantined_at.is_(None))
+        )
         if scope:
             stmt = stmt.where(
                 Memory.scope_type == scope.scope_type.value,
@@ -506,6 +519,26 @@ class MemoryRepository(BaseRepository[Memory]):
             values["tier"] = new_tier
         await self._session.execute(update(Memory).where(Memory.id == memory_id).values(**values))
 
+    # ---- governance ----
+
+    async def list_quarantined(self, *, limit: int = 50) -> list[Memory]:
+        """Memories withheld pending review, newest first."""
+        stmt = (
+            self.tenant_query()
+            .where(Memory.deleted_at.is_(None))
+            .where(Memory.quarantined_at.is_not(None))
+            .order_by(Memory.quarantined_at.desc())
+            .limit(limit)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def release_quarantine(self, memory: Memory) -> Memory:
+        """Let a reviewed memory back into retrieval."""
+        memory.quarantined_at = None
+        memory.quarantine_reason = None
+        await self._session.flush()
+        return memory
+
     # ---- deduplication ----
 
     async def find_by_content_hash(
@@ -602,6 +635,7 @@ class MemoryRepository(BaseRepository[Memory]):
             SELECT m.id, 1 - (m.embedding <=> CAST(:qv AS vector)) AS similarity
             FROM memories m
             WHERE m.deleted_at IS NULL
+              AND m.quarantined_at IS NULL
               AND m.embedding IS NOT NULL
               AND m.org_id = :org_id
               AND m.scope_type = :scope_type
@@ -698,6 +732,20 @@ class MemoryRepository(BaseRepository[Memory]):
         for i, sv in enumerate(sens_allowed):
             params[f"sens_{i}"] = sv
 
+        # Governance filters (WU-2.4). Quarantined memories are withheld from
+        # every retrieval path — the whole point is that stored injections stop
+        # being re-injected — and a recall made at confidential/secret
+        # sensitivity does not draw on content the system did not author.
+        gov_filter_sql = "AND m.quarantined_at IS NULL"
+        cfg = get_settings()
+        if cfg.trust_filtering:
+            allowed_trust = trusts_allowed_for(max_sensitivity)
+            if allowed_trust:
+                trust_placeholders = ", ".join(f":trust_{i}" for i in range(len(allowed_trust)))
+                gov_filter_sql += f" AND m.trust IN ({trust_placeholders})"
+                for i, tv in enumerate(allowed_trust):
+                    params[f"trust_{i}"] = tv
+
         # --- vector ranking (if vector available) ---
         vector_ids: list[int] = []
         if query_vector is not None:
@@ -708,6 +756,7 @@ class MemoryRepository(BaseRepository[Memory]):
                 WHERE m.deleted_at IS NULL
                   AND m.embedding IS NOT NULL
                   AND m.sensitivity IN ({sens_placeholders})
+                  {gov_filter_sql}
                   {org_filter_sql}
                   {scope_filter_sql}
                 ORDER BY m.embedding <=> CAST(:qv AS vector) ASC
@@ -727,6 +776,7 @@ class MemoryRepository(BaseRepository[Memory]):
             WHERE m.deleted_at IS NULL
               AND m.tsv @@ plainto_tsquery('english', :q)
               AND m.sensitivity IN ({sens_placeholders})
+              {gov_filter_sql}
               {org_filter_sql}
               {scope_filter_sql}
             ORDER BY rank DESC

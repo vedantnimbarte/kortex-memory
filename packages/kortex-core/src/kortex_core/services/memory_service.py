@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,16 @@ from kortex_core.security.principal import Principal, ScopeRef
 from kortex_core.services.access_control import AccessControl, ResourceRef
 from kortex_core.services.access_control import AccessDeniedError as _AccessDenied
 from kortex_core.settings import get_settings
+from kortex_core.skills.pii_detector import get_pii_detector, summarise
+from kortex_core.skills.pii_detector import redact as redact_text
+from kortex_core.skills.trust_policy import (
+    InjectionVerdict,
+    should_quarantine,
+    trust_for_source,
+)
+from kortex_core.telemetry.logging import get_logger
+
+log = get_logger("kortex.memory.governance")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +71,11 @@ class MemoryWrite:
 
     memory: Memory
     deduped: bool
+    pii_flags: dict[str, int] = field(default_factory=dict)
+    """Counts by kind of what the detector found. Empty when nothing did."""
+    redacted: bool = False
+    quarantined: bool = False
+    """True when the memory was withheld from retrieval pending review."""
 
 
 class MemoryService:
@@ -135,6 +150,12 @@ class MemoryService:
         being stored — otherwise both compete for space in every future recall
         and the caller pays context tokens to read the same sentence twice.
         ``force=True`` stores the copy anyway.
+
+        Every write is also scanned for personal and secret data, assigned a
+        trust level from its ``source_type``, and — when it is low-trust and
+        reads as instructions to the model — quarantined out of retrieval
+        pending review. What the PII scan *does* is set by ``pii_policy``;
+        the default only records what it found.
         """
         self._require_scope("write:memory")
         scope_ref = ScopeRef(type=payload.scope_type, id=payload.scope_id)
@@ -144,9 +165,52 @@ class MemoryService:
         ):
             raise _AccessDenied(f"cannot write {payload.sensitivity.value} memory in {scope_ref}")
         settings = get_settings()
+
+        # Governance before dedup: the fingerprint has to be taken from the
+        # text that will actually be stored, or a redacted write and its
+        # unredacted twin fingerprint differently and both get kept.
+        title, body = payload.title, payload.body
+        trust = trust_for_source(payload.source_type)
+        findings: dict[str, int] = {}
+        redacted = False
+        sensitivity = payload.sensitivity
+
+        if settings.pii_detection:
+            matches = get_pii_detector().scan(f"{title}\n{body}")
+            if matches:
+                findings = summarise(matches)
+                if settings.pii_policy == "redact":
+                    title = redact_text(title, get_pii_detector().scan(title))
+                    body = redact_text(body, get_pii_detector().scan(body))
+                    redacted = True
+                elif settings.pii_policy == "escalate" and sensitivity in (
+                    Sensitivity.PUBLIC,
+                    Sensitivity.INTERNAL,
+                ):
+                    sensitivity = Sensitivity.CONFIDENTIAL
+                log.info(
+                    "pii_detected",
+                    org_id=self._principal.org_id,
+                    policy=settings.pii_policy,
+                    kinds=sorted(findings),
+                )
+
+        verdict = (
+            should_quarantine(trust=trust, text=f"{title}\n{body}")
+            if settings.injection_quarantine
+            else InjectionVerdict(suspicious=False)
+        )
+        if verdict.suspicious:
+            log.warning(
+                "memory_quarantined",
+                org_id=self._principal.org_id,
+                source=payload.source_type.value,
+                patterns=list(verdict.patterns),
+            )
+
         digest: str | None = None
         if settings.dedup_on_write:
-            digest = content_hash(payload.title, payload.body)
+            digest = content_hash(title, body)
             if not force:
                 existing = await self._repo.find_by_content_hash(
                     scope_type=payload.scope_type,
@@ -173,13 +237,14 @@ class MemoryService:
             embedding = vectors[0]
             embedding_model = embedder.model_id
 
+        now = dt.datetime.now(tz=dt.UTC)
         created = await self._repo.create(
             scope_type=payload.scope_type,
             scope_id=payload.scope_id,
-            body=payload.body,
-            title=payload.title,
+            body=body,
+            title=title,
             kind=payload.kind,
-            sensitivity=payload.sensitivity,
+            sensitivity=sensitivity,
             source_type=payload.source_type,
             source_ref=payload.source_ref,
             importance=payload.importance,
@@ -192,8 +257,18 @@ class MemoryService:
                 self._principal.actor_id if self._principal.actor_kind.value == "user" else None
             ),
             content_hash=digest,
+            trust=trust.value,
+            pii_flags=findings,
+            quarantined_at=now if verdict.suspicious else None,
+            quarantine_reason=verdict.reason or None,
         )
-        return MemoryWrite(memory=created, deduped=False)
+        return MemoryWrite(
+            memory=created,
+            deduped=False,
+            pii_flags=findings,
+            redacted=redacted,
+            quarantined=verdict.suspicious,
+        )
 
     async def get(self, public_id: uuid.UUID) -> Memory | None:
         self._require_scope("read:memory")

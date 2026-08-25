@@ -52,6 +52,13 @@ class MemoryOut(APIModel):
     last_accessed_at: dt.datetime | None
     expires_at: dt.datetime | None
     metadata_: dict = Field(alias="metadata")
+    trust: str = "medium"
+    """Provenance confidence. Low-trust memories are withheld from recalls made
+    at confidential/secret sensitivity."""
+    pii_flags: dict = Field(default_factory=dict)
+    """Counts by kind of personal/secret data found at write time. Never values."""
+    quarantined: bool = False
+    """Withheld from every retrieval path pending operator review."""
     deduped: bool = False
     """True when this write folded into an existing identical memory rather
     than creating a new one. Only ever set on a create response."""

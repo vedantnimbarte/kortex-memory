@@ -61,6 +61,15 @@ class MemorySource(str, enum.Enum):
     TOOL_OUTPUT = "tool_output"
 
 
+class MemoryTrust(str, enum.Enum):
+    """Provenance-derived confidence. Distinct from sensitivity, which governs
+    who may read a memory rather than whether it should be believed."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class MemoryLinkType(str, enum.Enum):
     RELATED = "related"
     DERIVED_FROM = "derived_from"
