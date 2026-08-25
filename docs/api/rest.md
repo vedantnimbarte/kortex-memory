@@ -19,7 +19,7 @@ Authorization: Bearer <jwt>
 ## Surfaces
 
 - `/v1/auth/*` — login (returns JWT)
-- `/v1/orgs`, `/v1/workspaces`, `/v1/projects`, `/v1/users`, `/v1/api_keys` — tenancy
+- `/v1/orgs`, `/v1/workspaces`, `/v1/workspaces/{workspace_public_id}/projects`, `/v1/users`, `/v1/api_keys` — tenancy
 - `/v1/sessions`, `/v1/conversations`, `/v1/messages`
 - `/v1/memories` — CRUD + `/pin` + `/links`
 - `/v1/attachments` — `/presign`, `/{id}/finalize`, `/search`
