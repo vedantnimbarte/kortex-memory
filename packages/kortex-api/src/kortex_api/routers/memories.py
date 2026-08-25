@@ -30,9 +30,17 @@ async def create_memory(
     principal: PrincipalDep,
     session: SessionDep,
     embed_inline: bool = Query(default=False),
+    force: bool = Query(
+        default=False,
+        description=(
+            "Store the memory even when an identical one already exists in this "
+            "scope. Off by default: a repeat write folds into the existing memory "
+            "so both copies do not compete for space in every future recall."
+        ),
+    ),
 ) -> MemoryOut:
     svc = MemoryService(session, principal)
-    memory = await svc.create(
+    result = await svc.write(
         CreateMemoryInput(
             scope_type=payload.scope_type,
             scope_id=payload.scope_id,
@@ -48,9 +56,11 @@ async def create_memory(
             expires_at=payload.expires_at,
         ),
         embed_inline=embed_inline,
+        force=force,
     )
     await session.commit()
-    return MemoryOut.model_validate(memory)
+    out = MemoryOut.model_validate(result.memory)
+    return out.model_copy(update={"deduped": result.deduped})
 
 
 @router.get("", response_model=list[MemoryOut])

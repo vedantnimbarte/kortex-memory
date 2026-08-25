@@ -78,6 +78,13 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   `cost_usd` is `null` unless the operator configures `KORTEX_LLM_PRICES`; null means unpriced,
   not free. This also fills the gap the benchmark harness reported as zero.
 
+- **Deduplication on write** — writing a memory whose normalised title+body already exists in the
+  same scope now folds into the existing one and returns it with `deduped: true`, instead of
+  storing a second copy that competes for space in every future recall. The repeat counts as an
+  access (so a re-remembered fact resists decay) and its metadata is merged rather than dropped.
+  Scoped, never cross-scope. Bypass per write with `force`, or globally with
+  `KORTEX_DEDUP_ON_WRITE=false`.
+
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.
 - `search_memory` / `recall` / `get_context_bundle` responses gained a `conflicts` array per hit.
