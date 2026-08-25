@@ -12,7 +12,7 @@ asks about.
 from __future__ import annotations
 
 import pytest
-from kortex_core.db.types import MemoryKind, MemorySource, ReviewMode, ReviewStatus, ScopeType
+from kortex_core.db.types import MemoryKind, MemorySource, ReviewMode, ReviewStatus, Role, ScopeType
 from kortex_core.models.audit import AuditLog
 from kortex_core.repositories.memory_repo import MemoryRepository
 from kortex_core.repositories.project_repo import ProjectRepository
@@ -21,6 +21,7 @@ from kortex_core.services.auth_service import AuthService
 from kortex_core.services.memory_service import CreateMemoryInput, MemoryService
 from kortex_core.services.project_service import ProjectService
 from kortex_core.services.signup_service import SignupService
+from kortex_core.services.user_service import UserService
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
@@ -172,17 +173,35 @@ async def test_suspicion_is_held_even_with_gating_off(session) -> None:  # type:
 
 async def test_gating_is_per_project(session) -> None:  # type: ignore[no-untyped-def]
     """A scratch project and one holding customer commitments should not be
-    forced to share a setting."""
-    principal = await _owner(session, "rev6@acme.io", "Review Co 6")
+    forced to share a setting.
+
+    Registers inline rather than through the shared helper because it needs the
+    access token: creating a project grants no role on it (there is no cascade
+    from org owner), so the principal has to be re-materialised after the
+    grant to pick the new membership up.
+    """
+    registered = await SignupService(session).register(
+        email="rev6@acme.io", password="hunter2pass", org_name="Review Co 6"
+    )
+    auth = AuthService(session)
+    principal = (await auth.principal_from_jwt(registered.access_token)).principal
+
+    gated = await _project(session, principal, mode=ReviewMode.ALL)
     ws = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     workspace = await WorkspaceRepository(session, principal=principal).get_by_id(ws.id)
     assert workspace is not None
-    gated = await _project(session, principal, mode=ReviewMode.ALL)
     open_ = await ProjectService(session, principal).create(
         workspace_public_id=workspace.public_id, slug="open", name="Open"
     )
     assert open_ is not None
+    await UserService(session, principal).grant(
+        user_id=principal.actor_id,
+        scope_type=ScopeType.PROJECT,
+        scope_id=open_.id,
+        role=Role.OWNER,
+    )
     await session.flush()
+    principal = (await auth.principal_from_jwt(registered.access_token)).principal
 
     svc = MemoryService(session, principal)
     held = await svc.write(_payload(gated.id, "a fact in the gated project"))
