@@ -141,8 +141,9 @@ def summarise(
     total_tokens = sum(o.used_tokens for o in outcomes)
     if total_tokens == 0 and mode == "agentic":
         notes.append(
-            "Token usage reported as 0: recall responses do not carry a `usage` "
-            "field yet (see issue #12). Cost per query cannot be derived from this run."
+            "Agentic mode reported 0 tokens. Recall does report `usage`, so this "
+            "means the planner never ran — check whether an LLM is configured, or "
+            "whether a latency/token budget forced the hybrid path."
         )
     errors = sum(1 for o in outcomes if o.error)
     if errors:

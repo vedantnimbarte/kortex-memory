@@ -29,6 +29,7 @@ from kortex_core.llm.protocol import LLM, LlmError, LlmMessage
 from kortex_core.llm.registry import get_llm
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
 from kortex_core.retrieval.agent_loop import AgentLoop, AgentLoopResult
+from kortex_core.retrieval.budget import RecallBudget, RecallUsage, should_plan
 from kortex_core.retrieval.conflicts import annotate_conflicts, demote_superseded
 from kortex_core.retrieval.hybrid import HybridSearchHit
 from kortex_core.retrieval.query_plan import (
@@ -70,6 +71,7 @@ class ContextBundle:
     plan_rationale: str = ""
     hops: int = 0
     stopped_reason: str = ""
+    usage: RecallUsage = field(default_factory=RecallUsage)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +81,11 @@ class RecallRequest:
     synthesize: bool = False
     max_tokens: int = 0  # 0 → settings default
     per_item_max: int = 800
+    latency_budget_ms: int = 0
+    """Wall-clock ceiling for the whole call. 0 = unlimited. A budget too small
+    for a planner round trip degrades to plain hybrid retrieval."""
+    token_budget: int = 0
+    """Ceiling on LLM tokens spent planning and synthesising. 0 = unlimited."""
 
 
 _PLANNER_SYSTEM = (
@@ -120,12 +127,19 @@ class AgenticRetriever:
     async def recall(self, request: RecallRequest) -> ContextBundle:
         s = get_settings()
         max_tokens = request.max_tokens or s.retrieval_default_max_tokens
+        budget = RecallBudget(
+            latency_ms=request.latency_budget_ms,
+            tokens=request.token_budget,
+        )
+        usage = RecallUsage()
 
         with span(
             "kortex.retrieval.recall",
             query_len=len(request.query),
             synthesize=request.synthesize,
             org_id=self._principal.org_id,
+            latency_budget_ms=request.latency_budget_ms,
+            token_budget=request.token_budget,
         ) as root:
             # Resolve LLMs lazily; missing config falls back to hybrid-only.
             planner = self._planner
@@ -135,20 +149,37 @@ class AgenticRetriever:
                 except (KeyError, LlmError):
                     planner = None
 
-            if planner is None or not s.agentic_retrieval:
+            plan_it, skip_reason = should_plan(
+                budget,
+                planner_available=planner is not None,
+                agentic_enabled=s.agentic_retrieval,
+                min_budget_ms=s.retrieval_planner_min_budget_ms,
+                min_budget_tokens=s.retrieval_planner_min_budget_tokens,
+            )
+            if not plan_it or planner is None:
                 root.set_attribute("path", "fallback")
-                return await self._fallback_hybrid(request, max_tokens)
+                root.set_attribute("skip_reason", skip_reason)
+                return await self._fallback_hybrid(
+                    request, max_tokens, budget, usage, rationale=skip_reason
+                )
 
             root.set_attribute("path", "agentic")
+            usage.mode = "agentic"
 
             try:
                 with span("kortex.retrieval.plan") as ps:
-                    plan = await self._plan(planner, request)
+                    plan = await self._plan(planner, request, usage)
                     ps.set_attribute("steps", len(plan.steps))
             except LlmError as e:
                 log.warning("planner_failed", error=str(e))
                 root.set_attribute("path", "fallback_after_plan_error")
-                return await self._fallback_hybrid(request, max_tokens)
+                return await self._fallback_hybrid(
+                    request,
+                    max_tokens,
+                    budget,
+                    usage,
+                    rationale=f"planner failed ({e}); ran plain hybrid retrieval",
+                )
 
             try:
                 embedder = get_embedder()
@@ -160,6 +191,7 @@ class AgenticRetriever:
                 principal=self._principal,
                 embedder=embedder,
                 scopes=request.scopes,
+                budget=budget,
             )
             with span("kortex.retrieval.execute") as es:
                 exec_result: AgentLoopResult = await loop.run(plan)
@@ -175,6 +207,7 @@ class AgenticRetriever:
                     principal=self._principal,
                     embedder=embedder,
                     scopes=request.scopes,
+                    budget=budget,
                 ).run(fallback_plan)
 
             with span("kortex.retrieval.rerank") as rs:
@@ -188,18 +221,41 @@ class AgenticRetriever:
 
             answer = None
             if request.synthesize:
-                summarizer = self._summarizer or planner
-                try:
-                    with span("kortex.retrieval.synthesize") as syn:
-                        answer = await self._synthesize(summarizer, request.query, bundle)
-                        syn.set_attribute("answer_chars", len(answer or ""))
-                except LlmError as e:
-                    log.warning("summarizer_failed", error=str(e))
-                    answer = None
+                # A second model call is the most expensive thing left, so skip
+                # it rather than blow a budget the caller set deliberately.
+                affords_ms = budget.has_headroom(s.retrieval_planner_min_budget_ms)
+                affords_tokens = budget.affords_tokens(
+                    usage.total_tokens, s.retrieval_planner_min_budget_tokens
+                )
+                if not (affords_ms and affords_tokens):
+                    usage.budget_exhausted = True
+                    log.info(
+                        "synthesis_skipped_for_budget",
+                        elapsed_ms=round(budget.elapsed_ms()),
+                        tokens=usage.total_tokens,
+                    )
+                else:
+                    summarizer = self._summarizer or planner
+                    try:
+                        with span("kortex.retrieval.synthesize") as syn:
+                            answer = await self._synthesize(
+                                summarizer, request.query, bundle, usage
+                            )
+                            syn.set_attribute("answer_chars", len(answer or ""))
+                    except LlmError as e:
+                        log.warning("summarizer_failed", error=str(e))
+                        answer = None
 
             await self._memories.record_access([r.hit.memory_id for r in bundle])
 
+            usage.plan_steps = len(plan.steps)
+            usage.hops = exec_result.hops
+            usage.latency_ms = budget.elapsed_ms()
+            usage.budget_exhausted = (
+                usage.budget_exhausted or exec_result.stopped_reason == "budget_exhausted"
+            )
             root.set_attribute("kept", len(bundle))
+            root.set_attribute("tokens", usage.total_tokens)
             return ContextBundle(
                 query=request.query,
                 answer=answer,
@@ -217,11 +273,12 @@ class AgenticRetriever:
                 plan_rationale=plan.rationale,
                 hops=exec_result.hops,
                 stopped_reason=exec_result.stopped_reason,
+                usage=usage,
             )
 
     # --- internals ---
 
-    async def _plan(self, planner: LLM, request: RecallRequest) -> QueryPlan:
+    async def _plan(self, planner: LLM, request: RecallRequest, usage: RecallUsage) -> QueryPlan:
         s = get_settings()
         scope_hint = (
             "\nScopes: "
@@ -242,6 +299,7 @@ class AgenticRetriever:
             temperature=0.2,
             json_schema=query_plan_schema(),
         )
+        usage.record(resp, s.llm_prices)
         plan = parse_plan(resp.structured)
         if not plan.steps:
             # Recover gracefully — seed with one semantic step.
@@ -279,7 +337,9 @@ class AgenticRetriever:
             cs.set_attribute("demoted", len(demoted))
         return demote_superseded(kept, demoted, key=lambda r: r.hit.memory_id)
 
-    async def _synthesize(self, summarizer: LLM, query: str, bundle: list[RerankedHit]) -> str:
+    async def _synthesize(
+        self, summarizer: LLM, query: str, bundle: list[RerankedHit], usage: RecallUsage
+    ) -> str:
         s = get_settings()
         memories_block = "\n\n".join(
             f"[m:{r.hit.public_id}] {r.hit.title}\n{r.hit.body}" for r in bundle
@@ -296,9 +356,25 @@ class AgenticRetriever:
             max_tokens=600,
             temperature=0.1,
         )
+        usage.record(resp, s.llm_prices)
         return resp.text.strip()
 
-    async def _fallback_hybrid(self, request: RecallRequest, max_tokens: int) -> ContextBundle:
+    async def _fallback_hybrid(
+        self,
+        request: RecallRequest,
+        max_tokens: int,
+        budget: RecallBudget,
+        usage: RecallUsage,
+        *,
+        rationale: str = "",
+    ) -> ContextBundle:
+        """Plain hybrid retrieval — the one degradation path.
+
+        Reached when no planner is configured, when the planner errored, or
+        when the caller's budget cannot fit a model round trip. ``rationale``
+        says which, so a caller that expected agentic results can tell a
+        deliberate budget decision from a broken planner.
+        """
         max_sens = self._principal.max_sensitivity or Sensitivity.INTERNAL
         try:
             embedder = get_embedder()
@@ -317,6 +393,8 @@ class AgenticRetriever:
         )
         kept = await self._rerank_pack(request.query, hits, max_tokens, request.per_item_max)
         await self._memories.record_access([r.hit.memory_id for r in kept])
+        usage.mode = "hybrid"
+        usage.latency_ms = budget.elapsed_ms()
         return ContextBundle(
             query=request.query,
             answer=None,
@@ -327,9 +405,10 @@ class AgenticRetriever:
             candidates=kept,
             used_tokens=_used_tokens(kept, request.per_item_max),
             plan_trace=[f"fallback:hybrid used_vector={used_vector}"],
-            plan_rationale="planner unavailable; ran plain hybrid retrieval",
+            plan_rationale=rationale or "planner unavailable; ran plain hybrid retrieval",
             hops=0,
             stopped_reason="fallback",
+            usage=usage,
         )
 
 

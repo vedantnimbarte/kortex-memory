@@ -54,6 +54,47 @@ state of the world reads first. Nothing is ever filtered out — deciding which 
 contradiction holds needs conversation context that only the agent has. `created_at` is included
 so that decision can be made without another round trip.
 
+## Budgets and cost on recall
+
+`recall` and `get_context_bundle` accept two optional caps:
+
+| Field | Meaning |
+|---|---|
+| `latency_budget_ms` | Wall-clock ceiling for the whole call. 0 = unlimited. |
+| `token_budget` | Ceiling on LLM tokens spent planning and synthesising. 0 = unlimited. |
+
+Agentic recall plans with an LLM before retrieving, which buys multi-hop
+reasoning and costs a model round trip. Below roughly 1500ms
+(`KORTEX_RETRIEVAL_PLANNER_MIN_BUDGET_MS`) that round trip cannot fit, so the
+call **degrades to plain hybrid retrieval** — the same path taken when no
+planner is configured — rather than overshooting a budget the caller set
+deliberately. `plan_rationale` always says which happened, so a fast hybrid
+answer is distinguishable from a broken planner.
+
+Every response carries `usage`:
+
+```json
+{
+  "usage": {
+    "mode": "agentic",
+    "tokens_in": 1180, "tokens_out": 240, "total_tokens": 1420,
+    "llm_calls": 2, "plan_steps": 3, "hops": 2,
+    "latency_ms": 2317.4,
+    "cost_usd": 0.00214,
+    "budget_exhausted": false
+  }
+}
+```
+
+`cost_usd` is **null** unless the operator has configured prices via
+`KORTEX_LLM_PRICES` (model id → `[input, output]` USD per million tokens).
+Null means unpriced, not free — model pricing varies by contract and is zero
+for self-hosted models, so Kortex reports tokens and lets the operator
+multiply rather than shipping a table that goes stale.
+
+`budget_exhausted` is true when a cap cut the work short, which lets a caller
+tell a fast answer from a truncated one.
+
 ## Tool schemas
 
 The MCP `list_tools` response advertises full JSON schemas. The client can

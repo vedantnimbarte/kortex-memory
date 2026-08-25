@@ -125,6 +125,21 @@ class KortexSettings(BaseSettings):
     retrieval_top_k_bm25: int = 50
     retrieval_rrf_k: int = 60
     retrieval_default_max_tokens: int = 4000
+    retrieval_planner_min_budget_ms: int = 1500
+    """A recall asking for less than this skips the planner: a model round trip
+    cannot fit, and returning hybrid results inside the budget beats blowing it."""
+    retrieval_planner_min_budget_tokens: int = 1024
+    retrieval_hop_reserve_ms: int = 250
+    """Latency kept in hand before starting another agent-loop hop, so the loop
+    returns what it has instead of overshooting the caller's budget."""
+
+    llm_prices: dict[str, list[float]] = Field(default_factory=dict)
+    """Model id -> [input, output] USD per million tokens, e.g.
+    ``KORTEX_LLM_PRICES='{"claude-haiku-4-5": [0.8, 4.0]}'``.
+
+    Empty by default and deliberately so: prices change, vary by contract, and
+    are zero for self-hosted models. Recall reports ``cost_usd: null`` for a
+    model with no entry rather than inventing a number."""
 
     # --- Conflict detection (write-path; surfaces stale/contradictory memories) ---
     conflict_detection: bool = True

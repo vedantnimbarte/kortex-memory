@@ -26,6 +26,7 @@ from kortex_api.schemas.search import (
     SearchHitOut,
     SearchIn,
     SearchOut,
+    UsageOut,
 )
 
 router = APIRouter(prefix="/v1/search", tags=["search"])
@@ -92,6 +93,8 @@ async def recall(
             synthesize=payload.synthesize,
             max_tokens=payload.max_tokens,
             per_item_max=payload.per_item_max,
+            latency_budget_ms=payload.latency_budget_ms,
+            token_budget=payload.token_budget,
         )
     )
     await session.commit()
@@ -120,6 +123,7 @@ async def recall(
         plan_rationale=bundle.plan_rationale,
         hops=bundle.hops,
         stopped_reason=bundle.stopped_reason,
+        usage=UsageOut(**bundle.usage.as_dict()),
     )
 
 

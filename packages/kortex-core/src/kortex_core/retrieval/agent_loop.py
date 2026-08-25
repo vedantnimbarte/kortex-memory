@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kortex_core.db.types import MemoryLinkType, Sensitivity
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
+from kortex_core.retrieval.budget import RecallBudget
 from kortex_core.retrieval.hybrid import HybridSearchHit
 from kortex_core.retrieval.query_plan import (
     KeywordSearch,
@@ -53,16 +54,19 @@ class AgentLoop:
         principal: Principal,
         embedder: Embedder | None = None,
         scopes: list[ScopeFilter] | None = None,
+        budget: RecallBudget | None = None,
     ):
         self._session = session
         self._principal = principal
         self._embedder = embedder
         self._scopes = scopes
+        self._budget = budget
         self._memories = MemoryRepository(session, principal=principal)
         self._links = MemoryLinkRepository(session, principal=principal)
         s = get_settings()
         self._max_hops = s.retrieval_max_hops
         self._max_candidates = s.retrieval_max_candidates
+        self._hop_reserve_ms = s.retrieval_hop_reserve_ms
         self._max_sensitivity = principal.max_sensitivity or Sensitivity.INTERNAL
 
     async def run(self, plan: QueryPlan) -> AgentLoopResult:
@@ -74,6 +78,12 @@ class AgentLoop:
         hops = 0
 
         for step in plan.steps:
+            # Checked before the hop, not after: overshooting the caller's
+            # budget and then noticing helps nobody. Whatever has been found so
+            # far is returned, which is why partial results are useful here.
+            if self._budget is not None and not self._budget.has_headroom(self._hop_reserve_ms):
+                stopped_reason = "budget_exhausted"
+                break
             if hops >= self._max_hops:
                 stopped_reason = "max_hops"
                 break
