@@ -182,3 +182,23 @@ async def test_cost_is_reported_when_the_model_is_priced(session, monkeypatch) -
     )
     # 120 in @ $1/Mtok + 40 out @ $2/Mtok
     assert bundle.usage.cost_usd == pytest.approx((120 * 1.0 + 40 * 2.0) / 1_000_000)
+
+
+async def test_agentic_recall_survives_an_unusable_embedder(session) -> None:  # type: ignore[no-untyped-def]
+    """A failing embedder degrades the hop to keyword-only, it does not kill the recall.
+
+    The agent loop used to let EmbeddingError propagate, so agentic recall
+    raised where every other retrieval path falls back to BM25 — which is the
+    exact situation in CI, where the local embedding extra is not installed.
+    """
+    principal = await _owner(session, "budget7@acme.io", "Budget Co 7")
+    await _seed(session, principal)
+    planner = CountingLLM()
+
+    bundle = await AgenticRetriever(session, principal, planner=planner).recall(
+        RecallRequest(query="job queue", latency_budget_ms=60_000)
+    )
+
+    assert len(planner.calls) == 1
+    assert bundle.candidates, "keyword retrieval should still have found the seeded memories"
+    assert bundle.usage.mode == "agentic"

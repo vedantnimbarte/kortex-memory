@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kortex_core.db.types import MemoryLinkType, Sensitivity
+from kortex_core.embeddings.protocol import EmbeddingError
 from kortex_core.repositories.memory_link_repo import MemoryLinkRepository
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
 from kortex_core.retrieval.budget import RecallBudget
@@ -31,10 +32,13 @@ from kortex_core.retrieval.query_plan import (
 )
 from kortex_core.security.principal import Principal
 from kortex_core.settings import get_settings
+from kortex_core.telemetry.logging import get_logger
 from kortex_core.telemetry.tracing import span
 
 if TYPE_CHECKING:
     from kortex_core.embeddings.protocol import Embedder
+
+log = get_logger("kortex.retrieval.agent_loop")
 
 
 @dataclass(slots=True)
@@ -107,8 +111,20 @@ class AgentLoop:
                 if isinstance(step, SemanticSearch | KeywordSearch):
                     vector = None
                     if isinstance(step, SemanticSearch) and self._embedder is not None:
-                        vectors = await self._embedder.embed([step.query])
-                        vector = vectors[0]
+                        try:
+                            vectors = await self._embedder.embed([step.query])
+                            vector = vectors[0]
+                        except EmbeddingError as e:
+                            # The embedder can be resolvable but fail on use —
+                            # an optional dependency missing, a model that will
+                            # not load, a provider outage. Every other retrieval
+                            # path degrades to keyword-only in that case, and
+                            # this one used to raise instead, taking the whole
+                            # recall with it. Drop the embedder so the remaining
+                            # steps do not each retry a call that just failed.
+                            log.warning("agent_loop_embed_failed", error=str(e))
+                            trace.append(f"embed_failed: {e}")
+                            self._embedder = None
                     hits = await self._memories.hybrid_search(
                         query=step.query,
                         query_vector=vector,
