@@ -57,6 +57,17 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
 - **Repo hygiene** — `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue forms, and a PR
   template. `tests/e2e/` now exists, as the README has claimed since v0.1.
 
+- **Benchmark harness** (`scripts/eval/`) — runs LongMemEval, LoCoMo, or a built-in synthetic
+  suite against a live deployment over HTTP, reporting recall@k, MRR, judged accuracy (with
+  `--judge`) and p50/p95/p99 latency for `hybrid` and `agentic` modes over the same corpus.
+  Retrieval and answer accuracy are reported separately and never merged; unmeasured values render
+  as `—` rather than zero. `docs/benchmarks.md` is the place results go — currently empty, and
+  explicitly so.
+- **Retrieval regression gate** (`tests/integration/test_retrieval_quality.py`) — scores a small
+  synthetic corpus in ordinary CI and fails if recall or MRR falls below a floor, so a broken
+  ranker fails on the PR that caused it. Floors are loose by design: it catches breakage, not
+  drift.
+
 ### Changed
 - Free plan raised from 1,000 to 25,000 memories.
 - `search_memory` / `recall` / `get_context_bundle` responses gained a `conflicts` array per hit.
