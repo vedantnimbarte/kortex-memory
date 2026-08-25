@@ -217,11 +217,28 @@ _TOPICS = (
     ("blob storage", "S3 in production and the filesystem locally"),
 )
 
-_DISTRACTOR = (
-    "The team debated {topic} at length during the offsite and agreed to "
-    "revisit it next quarter. No decision was recorded at the time, and the "
-    "notes from that session were never circulated."
+# The corpus is built around how the retrieval it scores actually behaves:
+# `plainto_tsquery` ANDs its terms, so a document only matches when it contains
+# *every* content word of the question. A haystack whose answer paraphrases the
+# question ("we settled" vs "what did we decide") matches nothing at all and
+# scores zero for reasons that have nothing to do with retrieval quality.
+#
+# So each instance holds:
+#   - one gold document: the question's verb, the topic twice, and the answer
+#   - one near-distractor: same verb, same topic, no answer — this is what makes
+#     it a ranking test rather than a lookup
+#   - N far-distractors: same verb, a different topic — they match the verb but
+#     not the topic, so they exercise the filter without competing
+_GOLD = (
+    "After the migration review we decided the {topic} question. "
+    "We use {answer}. That is the current {topic} setup and supersedes "
+    "whatever was discussed before."
 )
+_NEAR = (
+    "We decided to defer the {topic} conversation to next quarter. "
+    "Nobody wrote down a conclusion at the time."
+)
+_FAR = "We decided to revisit {topic} at some point after the current milestone."
 
 
 def load_synthetic(count: int = 50, haystack_size: int = 40) -> Iterator[EvalInstance]:
@@ -231,6 +248,8 @@ def load_synthetic(count: int = 50, haystack_size: int = 40) -> Iterator[EvalIns
     long-context memory quality. Its job is to be a regression gate that runs
     anywhere, so a change that breaks retrieval fails fast without waiting on a
     115M-token corpus. Never publish these numbers as a benchmark result.
+
+    Each instance yields ``haystack_size + 2`` documents; exactly one is gold.
     """
     for i in range(count):
         topic, answer = _TOPICS[i % len(_TOPICS)]
@@ -239,20 +258,21 @@ def load_synthetic(count: int = 50, haystack_size: int = 40) -> Iterator[EvalIns
             Document(
                 doc_id=gold_id,
                 title=f"decision {i}: {topic}",
-                body=(
-                    f"After the migration review we settled the question of {topic}. "
-                    f"We use {answer}. This is the current state and supersedes the "
-                    f"earlier discussion."
-                ),
-            )
+                body=_GOLD.format(topic=topic, answer=answer),
+            ),
+            Document(
+                doc_id=f"syn-{i}-near",
+                title=f"deferred {i}: {topic}",
+                body=_NEAR.format(topic=topic),
+            ),
         ]
         for j in range(haystack_size):
             other, _ = _TOPICS[(i + j + 1) % len(_TOPICS)]
             documents.append(
                 Document(
-                    doc_id=f"syn-{i}-noise-{j}",
+                    doc_id=f"syn-{i}-far-{j}",
                     title=f"note {i}.{j}",
-                    body=_DISTRACTOR.format(topic=other),
+                    body=_FAR.format(topic=other),
                 )
             )
         yield EvalInstance(

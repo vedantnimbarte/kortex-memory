@@ -220,8 +220,37 @@ def test_synthetic_suite_is_deterministic() -> None:
 
 def test_synthetic_instance_has_exactly_one_gold_document_among_distractors() -> None:
     instance = next(iter(load_synthetic(count=1, haystack_size=10)))
-    assert len(instance.documents) == 11
+    assert len(instance.documents) == 12  # gold + near-distractor + 10 far
     assert instance.questions[0].gold_doc_ids == (instance.documents[0].doc_id,)
+
+
+def test_synthetic_question_shares_its_verb_and_topic_with_the_gold_document() -> None:
+    """`plainto_tsquery` ANDs terms, so a paraphrased answer matches nothing.
+
+    This is the failure that produced recall@k of exactly 0.0: the question
+    asked what we "decided" while the gold document said we "settled".
+    """
+    instance = next(iter(load_synthetic(count=1, haystack_size=3)))
+    question, gold = instance.questions[0].question.lower(), instance.documents[0].body.lower()
+    assert "decide" in question and "decided" in gold
+    topic = question.removeprefix("what did we decide about the ").rstrip("?")
+    assert topic in gold
+
+
+def test_near_distractor_shares_the_topic_so_ranking_is_exercised() -> None:
+    instance = next(iter(load_synthetic(count=1, haystack_size=3)))
+    gold, near = instance.documents[0], instance.documents[1]
+    topic = (
+        instance.questions[0]
+        .question.lower()
+        .removeprefix("what did we decide about the ")
+        .rstrip("?")
+    )
+    assert topic in near.body.lower()
+    assert "decided" in near.body.lower()
+    # Only the gold carries the answer, so a correct ranker prefers it.
+    assert instance.questions[0].answer in gold.body
+    assert instance.questions[0].answer not in near.body
 
 
 def test_unknown_suite_is_rejected() -> None:
