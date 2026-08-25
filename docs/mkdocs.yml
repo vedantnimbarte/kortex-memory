@@ -1,8 +1,16 @@
 site_name: Kortex Memory
 site_description: Production-grade memory layer for LLMs and AI coding agents.
 site_url: https://kortex-memory.dev
-repo_url: https://github.com/anthropic/kortex-memory
+repo_url: https://github.com/vedantnimbarte/kortex-memory
 repo_name: kortex-memory
+
+# Internal strategy documents. They live beside the docs for convenience but
+# must never reach the published site — they contain competitor critique and
+# pricing positioning. Excluded here rather than relying on the nav, because
+# mkdocs publishes every page it finds in docs_dir, nav membership or not.
+exclude_docs: |
+  market-research.md
+  implementation-plan.md
 
 theme:
   name: material
