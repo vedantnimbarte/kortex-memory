@@ -233,10 +233,20 @@ class AuditRepository(BaseRepository[AuditLog]):
             .order_by(AuditLog.id)
             .execution_options(yield_per=500)
         )
+        # Closed deterministically. A streaming result left open holds a
+        # server-side cursor for the rest of the session, and Postgres then
+        # refuses DDL on the table -- which is how this surfaced: a test that
+        # verified and then tried to disable the trigger.
+        result = await self._session.stream(stmt)
+        try:
+            return await self._walk(org_id, result)
+        finally:
+            await result.close()
+
+    async def _walk(self, org_id: int, result: Any) -> ChainStatus:
         expected: str | None = None
         anchor = GENESIS
         entries = unchained = 0
-        result = await self._session.stream(stmt)
         async for entry in result.scalars():
             entries += 1
             if expected is None and entry.entry_hash is not None:

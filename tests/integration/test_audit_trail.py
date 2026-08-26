@@ -141,7 +141,7 @@ async def test_a_membership_grant_is_recorded_against_the_user(session) -> None:
     assert grants
     assert grants[-1].target_type == "user"
     assert grants[-1].target_id == principal.actor_id
-    assert grants[-1].metadata_["role"] == "editor"
+    assert grants[-1].metadata_["role"] == "member"
 
 
 async def test_deleting_a_memory_is_recorded(session) -> None:  # type: ignore[no-untyped-def]
