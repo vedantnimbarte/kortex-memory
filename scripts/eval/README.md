@@ -6,7 +6,7 @@ describe the system as it runs rather than a library call.
 ## Quick check (no downloads)
 
 ```bash
-docker run -d --name kortex-local -p 8000:8000 -v kortex-data:/data kortex/kortex:local
+make local-build && make local-run   # or ghcr.io/vedantnimbarte/kortex-local:main
 export KORTEX_API_URL=http://localhost:8000
 export KORTEX_API_KEY=kx_...          # kortex key create
 python -m scripts.eval.run --suite synthetic --mode hybrid --mode agentic

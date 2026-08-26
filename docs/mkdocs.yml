@@ -12,6 +12,7 @@ exclude_docs: |
   market-research.md
   implementation-plan.md
   distribution.md
+  dogfood-log.md
 
 theme:
   name: material
