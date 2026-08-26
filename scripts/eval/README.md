@@ -29,9 +29,16 @@ Neither dataset is redistributed here; download them from their authors.
 ```bash
 python -m scripts.eval.run \
   --suite longmemeval --data data/longmemeval_s.json \
-  --mode hybrid --mode agentic --judge \
+  --mode hybrid --mode agentic \
+  --budget-ms 250 --budget-ms 1000 --budget-ms 4000 \
+  --judge \
   --out eval-longmemeval.json
 ```
+
+`--budget-ms` is repeatable and runs agentic mode once per latency ceiling.
+That is what produces the accuracy-vs-latency frontier and the verdict the
+report ends with — including, if it comes to that, "demote agentic to opt-in".
+Without at least two budgets you get two dots and no curve.
 
 `--limit N` caps instances while iterating; a full LongMemEval run ingests a
 haystack per question and takes hours.
@@ -73,9 +80,10 @@ perfectly and answer badly.
 - **Cost needs prices.** Recall reports `usage` with tokens and latency, but
   `cost_usd` is null unless `KORTEX_LLM_PRICES` is configured. Set it before a
   run if the table should carry dollars.
-- **No latency-budget sweep.** Recall accepts `latency_budget_ms`, so the input
-  for LongMemEval-V2's LAFS metric exists, but the harness still measures one
-  point per mode rather than sweeping to trace the frontier.
+- **The judge is the model you configured.** Grading with the same family the
+  system answers with is a known bias. Point `KORTEX_LLM_PROVIDER` at a
+  different vendor for the judge if the number will be published as a
+  comparison.
 
 ## Rules for publishing a number
 

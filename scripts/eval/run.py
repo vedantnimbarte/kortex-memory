@@ -21,7 +21,14 @@ from pathlib import Path
 
 from scripts.eval.datasets import SUITES, DatasetError, EvalInstance, fingerprint, load
 from scripts.eval.harness import Backend, EvalRun, HarnessError
-from scripts.eval.metrics import QueryOutcome, RunReport, render_markdown, summarise
+from scripts.eval.metrics import (
+    QueryOutcome,
+    RunReport,
+    frontier,
+    render_frontier,
+    render_markdown,
+    summarise,
+)
 
 
 def _judge(outcomes: list[QueryOutcome], instances: list[EvalInstance]) -> None:
@@ -98,6 +105,7 @@ def _judge(outcomes: list[QueryOutcome], instances: list[EvalInstance]) -> None:
             answer=outcome.answer,
             judged_correct=verdict,
             used_tokens=outcome.used_tokens,
+            cost_usd=outcome.cost_usd,
             error=outcome.error,
         )
 
@@ -113,6 +121,21 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         choices=["hybrid", "agentic"],
         help="Repeatable. Defaults to both, so neither can be quietly omitted.",
+    )
+    parser.add_argument(
+        "--budget-ms",
+        type=int,
+        action="append",
+        help=(
+            "Repeatable. Runs agentic mode once per latency ceiling to trace the "
+            "accuracy-vs-latency frontier WU-2.6 turns on. Omit for one unbounded run."
+        ),
+    )
+    parser.add_argument(
+        "--token-budget",
+        type=int,
+        default=0,
+        help="Cap the LLM tokens agentic recall may spend planning (0 = unbounded).",
     )
     parser.add_argument("--limit", type=int, default=0, help="Cap instances (0 = all)")
     parser.add_argument("--count", type=int, default=50, help="Synthetic suite size")
@@ -130,6 +153,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     modes = args.mode or ["hybrid", "agentic"]
+    # Each agentic budget is its own run over the same corpus. Hybrid takes no
+    # budget, so sweeping it would re-measure an identical thing N times.
+    budgets: list[int] = sorted(set(args.budget_ms or [0]))
+    runs: list[tuple[str, int]] = [
+        (mode, budget) for mode in modes for budget in (budgets if mode == "agentic" else [0])
+    ]
     if not args.api_key:
         print("error: set KORTEX_API_KEY (or pass --api-key)", file=sys.stderr)
         return 2
@@ -156,8 +185,9 @@ def main(argv: list[str] | None = None) -> int:
     reports: list[RunReport] = []
     per_mode_outcomes: dict[str, list[dict]] = {}
 
-    for mode in modes:
-        print(f"\n[{mode}] running…")
+    for mode, budget in runs:
+        label = f"{mode}@{budget}ms" if budget else mode
+        print(f"\n[{label}] running…")
         outcomes: list[QueryOutcome] = []
         warnings: list[str] = []
         try:
@@ -167,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
                 top_k=args.top_k,
                 synthesize=args.judge,
                 keep_scope=args.keep,
+                latency_budget_ms=budget,
+                token_budget=args.token_budget,
             ) as run:
                 run.preflight()
                 for index, instance in enumerate(instances, start=1):
@@ -175,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
                     if warning:
                         warnings.append(warning)
                     print(
-                        f"  [{mode}] {index}/{len(instances)} "
+                        f"  [{label}] {index}/{len(instances)} "
                         f"{instance.instance_id[:32]} docs={len(instance.documents)}",
                         end="\r",
                     )
@@ -185,16 +217,17 @@ def main(argv: list[str] | None = None) -> int:
         print()
 
         if args.judge:
-            print(f"  [{mode}] judging {len(outcomes)} answers…")
+            print(f"  [{label}] judging {len(outcomes)} answers…")
             _judge(outcomes, instances)
 
         report = summarise(
             suite=args.suite,
-            mode=mode,
+            mode=label,
             instances=len(instances),
             corpus_fingerprint=corpus,
             outcomes=outcomes,
             judge="llm" if args.judge else "none",
+            budget_ms=budget,
         )
         if warnings:
             report.notes.append(
@@ -203,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"First: {warnings[0]}"
             )
         reports.append(report)
-        per_mode_outcomes[mode] = [
+        per_mode_outcomes[label] = [
             {
                 "question_id": o.question_id,
                 "category": o.category,
@@ -213,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
                 "first_gold_rank": o.first_gold_rank,
                 "judged_correct": o.judged_correct,
                 "used_tokens": o.used_tokens,
+                "cost_usd": o.cost_usd,
                 "error": o.error,
             }
             for o in outcomes
@@ -222,21 +256,30 @@ def main(argv: list[str] | None = None) -> int:
         f"python -m scripts.eval.run --suite {args.suite}"
         + (f" --data {args.data}" if args.data else "")
         + "".join(f" --mode {m}" for m in modes)
+        + "".join(f" --budget-ms {b}" for b in budgets if b)
+        + (f" --token-budget {args.token_budget}" if args.token_budget else "")
         + (f" --limit {args.limit}" if args.limit else "")
         + (" --judge" if args.judge else "")
     )
+    front = frontier(reports)
     payload = {
         "generated_at": dt.datetime.now(tz=dt.UTC).isoformat(),
         "api_url": args.api_url,
         "command": command,
         "reports": [r.as_dict() for r in reports],
+        "frontier": front.as_dict() if front else None,
         "outcomes": per_mode_outcomes,
     }
     args.out.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
 
-    table = render_markdown(reports, command=command)
+    table = render_markdown(reports, command=command) + render_frontier(front)
     print("\n" + table)
     print(f"wrote {args.out}")
+    # A non-zero exit would be wrong: the run succeeded, and the finding is the
+    # point. WU-2.6 asks for the unflattering number to be published, not
+    # treated as a failure.
+    if front is not None and front.demote:
+        print("NOTE: the frontier says agentic should be opt-in — see the verdict above.")
     return 0
 
 
