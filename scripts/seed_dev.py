@@ -16,6 +16,7 @@ import sys
 from kortex_core.db.session import session_scope
 from kortex_core.db.types import ActorKind, Role, ScopeType
 from kortex_core.repositories.org_repo import OrgRepository
+from kortex_core.repositories.project_repo import ProjectRepository
 from kortex_core.repositories.user_repo import UserRepository
 from kortex_core.repositories.workspace_repo import WorkspaceRepository
 from kortex_core.security.principal import Principal
@@ -74,10 +75,17 @@ async def main() -> int:
             ws = await ws_svc.create(slug=ws_slug, name=ws_slug.capitalize())
 
         # --- project ---
-        proj_svc = ProjectService(session, org_principal)
-        proj = await proj_svc.create(
-            workspace_public_id=ws.public_id, slug=proj_slug, name=proj_slug.capitalize()
-        )
+        # Looked up first, like the org and the workspace above. projects has a
+        # UNIQUE (workspace_id, slug), so creating unconditionally made a second
+        # `make seed` die on an integrity error -- which is the first thing
+        # anyone does after a `make down -v`.
+        proj_repo = ProjectRepository(session, principal=org_principal)
+        proj = await proj_repo.get_by_slug(ws.id, proj_slug)
+        if proj is None:
+            proj_svc = ProjectService(session, org_principal)
+            proj = await proj_svc.create(
+                workspace_public_id=ws.public_id, slug=proj_slug, name=proj_slug.capitalize()
+            )
         if proj is None:
             print("workspace lookup failed", file=sys.stderr)
             return 2
@@ -119,6 +127,10 @@ async def main() -> int:
     print(f"  project:    {proj_slug} (id={proj.id})")
     print(f"  admin:      {admin_email} / {admin_password}")
     print(f"  api key:    {minted.plaintext}")
+    print()
+    print("  export KORTEX_API_URL=http://localhost:8000")
+    print(f"  export KORTEX_API_KEY={minted.plaintext}")
+    print(f"  # the project scope for CLI calls:  --scope-type project --scope-id {proj.id}")
     print("=" * 60)
     return 0
 

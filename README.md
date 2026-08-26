@@ -64,8 +64,18 @@ kortex-memory/
 # Try it in one command
 
 ```bash
-docker run -d --name kortex-local   -p 8000:8000 -p 8765:8765   -v kortex-data:/data   kortex/kortex:local
+make local-build && make local-run
 ```
+
+Or, once the container package is published publicly — it is **not** yet, see
+[docs/distribution.md](docs/distribution.md) — without a checkout at all:
+
+```bash
+docker run -d --name kortex-local -p 8000:8000 -p 8765:8765 -v kortex-data:/data ghcr.io/vedantnimbarte/kortex-local:main
+```
+
+CI pushes `:main` and `:<sha>` on every merge to main; `:latest` appears only
+on a tagged release.
 
 Postgres + pgvector, Redis, the API, the MCP server, the worker and beat, in
 one container with a persistent volume. No compose file, no checkout, no
@@ -172,7 +182,7 @@ make seed       # uv run python scripts/seed_dev.py
 
 Prints a dev org, workspace, project, admin login
 (`admin@kortex.dev` / `kortex-dev-password`), and a plaintext API key
-(`kx_...`) **shown exactly once — copy it.** Customise via `KORTEX_SEED_EMAIL`,
+(`kx_...`) **shown exactly once — copy it.** Re-running is safe: it reuses the org, workspace and project it already created. Customise via `KORTEX_SEED_EMAIL`,
 `KORTEX_SEED_PASSWORD`, `KORTEX_SEED_ORG`, `KORTEX_SEED_WORKSPACE`,
 `KORTEX_SEED_PROJECT`.
 
@@ -183,8 +193,9 @@ curl http://localhost:8000/livez && curl http://localhost:8000/readyz
 
 export KORTEX_API_URL=http://localhost:8000
 export KORTEX_API_KEY=kx_...            # from make seed
+export KORTEX_PROJECT_ID=1              # also printed by make seed -- do not guess it
 kortex memory create --body "Use Redis with a 5-min TTL for the search cache" \
-  --scope-type project --scope-id 1 --embed
+  --scope-type project --scope-id "$KORTEX_PROJECT_ID" --embed
 kortex search "caching"
 kortex recall "what did we decide about caching?" --synthesize
 ```

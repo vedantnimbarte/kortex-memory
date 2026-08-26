@@ -75,7 +75,7 @@ commit.
 
 ```bash
 # 1. A deployment to measure
-docker run -d --name kortex-local -p 8000:8000 -v kortex-data:/data kortex/kortex:local
+make local-build && make local-run   # or ghcr.io/vedantnimbarte/kortex-local:main
 
 # 2. Wait for the write path to be healthy — querying before embeddings finish
 #    measures the keyword fallback and reports it as vector search
