@@ -42,9 +42,26 @@ async def _owner(session, email: str, org: str):  # type: ignore[no-untyped-def]
 
 async def _actions(session, principal) -> list[str]:  # type: ignore[no-untyped-def]
     entries = await AuditRepository(session, principal=principal).read(
-        org_id=principal.org_id, limit=100
+        org_id=principal.org_id, limit=200
     )
     return [e.action for e in entries]
+
+
+async def _entries(session, principal):  # type: ignore[no-untyped-def]
+    return await AuditRepository(session, principal=principal).read(
+        org_id=principal.org_id, limit=200
+    )
+
+
+async def _new_actions(session, principal, baseline: int) -> list[str]:  # type: ignore[no-untyped-def]
+    """Actions recorded after ``baseline`` entries.
+
+    Signing up grants org, workspace and project memberships, and those are
+    audited -- correctly: org creation should be traceable. So these tests
+    measure what the action under test added rather than asserting the log was
+    empty to begin with.
+    """
+    return (await _actions(session, principal))[baseline:]
 
 
 # --- coverage: the five categories ------------------------------------------
@@ -115,7 +132,7 @@ async def test_a_membership_grant_is_recorded_against_the_user(session) -> None:
         user_id=principal.actor_id,
         scope_type=scope.type,
         scope_id=scope.id,
-        role=Role.EDITOR,
+        role=Role.MEMBER,
     )
     await session.flush()
 
@@ -148,6 +165,7 @@ async def test_ordinary_writes_and_reads_are_not_audited(session) -> None:  # ty
     """A log that records everything is a log nobody reads, and the noise buries
     the events that matter."""
     principal, _ = await _owner(session, "aud7@acme.io", "Audit Seven")
+    baseline = len(await _actions(session, principal))
     scope = next(s for s in principal.roles if s.type == ScopeType.WORKSPACE)
     for i in range(3):
         await MemoryService(session, principal).write(
@@ -155,7 +173,7 @@ async def test_ordinary_writes_and_reads_are_not_audited(session) -> None:  # ty
         )
     await session.flush()
 
-    assert await _actions(session, principal) == []
+    assert await _new_actions(session, principal, baseline) == []
 
 
 async def test_a_system_principal_bound_to_an_org_can_audit(session) -> None:  # type: ignore[no-untyped-def]
@@ -191,13 +209,14 @@ async def test_an_unbound_superuser_must_name_the_org(session) -> None:  # type:
 async def test_the_chain_starts_at_genesis_and_links_forward(session) -> None:  # type: ignore[no-untyped-def]
     principal, _ = await _owner(session, "aud8@acme.io", "Audit Eight")
     repo = AuditRepository(session, principal=principal)
+    head_before = await repo.head(principal.org_id)
     first = await repo.append(actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGIN))
     second = await repo.append(
         actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGOUT)
     )
     await session.flush()
 
-    assert first.prev_hash == GENESIS
+    assert first.prev_hash == head_before
     assert second.prev_hash == first.entry_hash
     assert (await repo.verify(principal.org_id)).intact
 
@@ -284,11 +303,12 @@ async def test_retention_can_delete_and_says_that_it_did(session) -> None:  # ty
     repo = AuditRepository(session, principal=principal)
     await repo.append(actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGIN))
     await session.flush()
+    existing = len(await _actions(session, principal))
 
     removed = await repo.purge_before(
         org_id=principal.org_id, cutoff=dt.datetime.now(tz=dt.UTC) + dt.timedelta(days=1)
     )
-    assert removed == 1
+    assert removed == existing
 
     await repo.append(
         actor_kind=ActorKind.SYSTEM,
@@ -297,6 +317,7 @@ async def test_retention_can_delete_and_says_that_it_did(session) -> None:  # ty
         metadata={"removed": removed},
     )
     await session.flush()
+    # Everything gone, and the only thing left is the record that it went.
     assert await _actions(session, principal) == [str(AuditAction.AUDIT_PURGED)]
 
 
@@ -328,11 +349,14 @@ async def test_the_head_is_stable_and_exportable(session) -> None:  # type: igno
     removed from the end", so it has to be a value you can actually record."""
     principal, _ = await _owner(session, "aud15@acme.io", "Audit Fifteen")
     repo = AuditRepository(session, principal=principal)
-    assert await repo.head(principal.org_id) == GENESIS
+    before = await repo.head(principal.org_id)
 
     entry = await repo.append(actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGIN))
     await session.flush()
-    assert await repo.head(principal.org_id) == entry.entry_hash
+    after = await repo.head(principal.org_id)
+
+    assert after == entry.entry_hash
+    assert after != before  # every append moves it, which is what makes it an anchor
 
 
 async def test_one_orgs_chain_is_independent_of_another(session) -> None:  # type: ignore[no-untyped-def]
@@ -344,15 +368,14 @@ async def test_one_orgs_chain_is_independent_of_another(session) -> None:  # typ
 
     a = AuditRepository(session, principal=first)
     b = AuditRepository(session, principal=second)
-    await a.append(actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGIN))
-    await b.append(actor_kind=ActorKind.USER, actor_id=2, action=str(AuditAction.LOGIN))
-    first_second = await a.append(
-        actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGOUT)
-    )
+    a_first = await a.append(actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGIN))
+    b_only = await b.append(actor_kind=ActorKind.USER, actor_id=2, action=str(AuditAction.LOGIN))
+    a_second = await a.append(actor_kind=ActorKind.USER, actor_id=1, action=str(AuditAction.LOGOUT))
     await session.flush()
 
-    # The second entry for org A chains to org A's first, not to org B's.
-    entries = await a.read(org_id=first.org_id)
-    assert first_second.prev_hash == entries[0].entry_hash
+    # A's second entry chains to A's first, not to B's -- even though B's was
+    # written in between, which is the interleaving that would fork one chain.
+    assert a_second.prev_hash == a_first.entry_hash
+    assert a_second.prev_hash != b_only.entry_hash
     assert (await a.verify(first.org_id)).intact
     assert (await b.verify(second.org_id)).intact

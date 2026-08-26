@@ -223,6 +223,10 @@ class AuditRepository(BaseRepository[AuditLog]):
         externally recorded head are what cover that; ``anchor_prev`` is
         reported so the gap is visible rather than implied.
         """
+        # stream(), not execute(): yield_per opens a server-side cursor, and an
+        # async session refuses to hand one back through execute(). Streaming
+        # matters here -- verification walks the whole log, and a year of it
+        # should not be materialised to check a hash.
         stmt = (
             select(AuditLog)
             .where(AuditLog.org_id == org_id)
@@ -232,7 +236,8 @@ class AuditRepository(BaseRepository[AuditLog]):
         expected: str | None = None
         anchor = GENESIS
         entries = unchained = 0
-        for entry in (await self._session.execute(stmt)).scalars():
+        result = await self._session.stream(stmt)
+        async for entry in result.scalars():
             entries += 1
             if expected is None and entry.entry_hash is not None:
                 expected = entry.prev_hash or GENESIS
