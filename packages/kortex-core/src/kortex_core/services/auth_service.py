@@ -9,8 +9,10 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kortex_core.audit import AuditAction
 from kortex_core.db.types import ActorKind, Role, ScopeType, Sensitivity
 from kortex_core.repositories.api_key_repo import ApiKeyRepository
+from kortex_core.repositories.audit_repo import AuditRepository
 from kortex_core.repositories.membership_repo import MembershipRepository
 from kortex_core.repositories.user_repo import UserRepository
 from kortex_core.security import token_denylist
@@ -93,11 +95,49 @@ class AuthService:
     async def login_with_password(self, *, email: str, password: str) -> LoginResult:
         user = await self._users.get_by_email(email)
         if user is None or user.password_hash is None:
+            # Not audited. An unknown email belongs to no tenant, so there is no
+            # org whose log it could honestly go in, and writing it to a guessed
+            # one would fill a customer's audit trail with strangers. Failed
+            # logins against addresses that do not exist belong in the
+            # application log, which is where the rate limiter already sees them.
             raise AuthError("invalid credentials")
         if not verify_password(user.password_hash, password):
+            await self._audit_auth(user.id, AuditAction.LOGIN_FAILED)
             raise AuthError("invalid credentials")
         await self._users.touch_login(user.id)
+        await self._audit_auth(user.id, AuditAction.LOGIN)
         return self.issue_tokens(user.id, user.public_id)
+
+    async def _audit_auth(self, user_id: int, action: AuditAction) -> None:
+        """Record an authentication event against the user's org.
+
+        Never records the password, or a hash of it, or its length: a
+        failed-login log that captures credential material is a credential
+        store with a misleading name, and it is the first thing an attacker
+        reads after getting query access.
+
+        A user with no org membership is skipped rather than filed under a
+        placeholder tenant — an entry in the wrong org's log is worse than a
+        missing one, because it will be believed.
+        """
+        org_id = await self._org_for_user(user_id)
+        if org_id is None:
+            return
+        await AuditRepository(self._session).append(
+            actor_kind=ActorKind.USER,
+            actor_id=user_id,
+            action=str(action),
+            target_type="user",
+            target_id=user_id,
+            org_id=org_id,
+        )
+
+    async def _org_for_user(self, user_id: int) -> int | None:
+        memberships = await self._memberships.list_for_user(user_id)
+        return next(
+            (m.scope_id for m in memberships if m.scope_type == ScopeType.ORG.value),
+            None,
+        )
 
     async def refresh(self, refresh_token: str) -> LoginResult:
         """Exchange a valid refresh token for a fresh pair. Rotation: the spent

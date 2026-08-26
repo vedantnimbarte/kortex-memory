@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kortex_core.audit import AuditAction
 from kortex_core.db.types import (
     MemoryKind,
     MemoryLinkType,
@@ -180,7 +181,11 @@ class MemoryService:
         await AuditRepository(self._session, principal=self._principal).append(
             actor_kind=self._principal.actor_kind,
             actor_id=self._principal.actor_id,
-            action=f"memory.review.{status.value}",
+            action=str(
+                AuditAction.MEMORY_REVIEW_APPROVED
+                if status is ReviewStatus.APPROVED
+                else AuditAction.MEMORY_REVIEW_REJECTED
+            ),
             target_type="memory",
             target_id=memory.id,
             metadata={"reason": memory.review_reason or "", "scope_id": memory.scope_id},
@@ -456,6 +461,18 @@ class MemoryService:
             return False
         self._require_write(memory)
         await self._repo.soft_delete(memory)
+        # Audited, unlike ordinary writes: a deletion is the one memory event
+        # that leaves nothing behind to inspect, so if it is not recorded here
+        # there is no way to answer "where did that go" later. `bulk_apply`
+        # routes through this method, so a bulk delete audits every id.
+        await AuditRepository(self._session, principal=self._principal).append(
+            actor_kind=self._principal.actor_kind,
+            actor_id=self._principal.actor_id,
+            action=str(AuditAction.MEMORY_DELETED),
+            target_type="memory",
+            target_id=memory.id,
+            metadata={"public_id": str(memory.public_id), "title": memory.title[:200]},
+        )
         return True
 
     async def set_pinned(self, public_id: uuid.UUID, pinned: bool) -> Memory | None:

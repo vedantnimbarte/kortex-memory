@@ -66,6 +66,7 @@ nav:
   - Operators:
       - Deploy: operators/deploy.md
       - Scale: operators/scale.md
+      - Audit trail: operators/audit.md
       - Backup: operators/backup.md
       - Rotate keys: operators/rotate-keys.md
       - Runbooks: operators/runbooks.md

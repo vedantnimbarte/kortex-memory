@@ -30,6 +30,7 @@ from kortex_api.routers import (
     analytics,
     api_keys,
     attachments,
+    audit,
     auth,
     billing,
     conversations,
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(export.router)
     app.include_router(billing.router)
     app.include_router(admin.router)
+    app.include_router(audit.router)
 
     return app
 
