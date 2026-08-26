@@ -1,0 +1,31 @@
+{
+  "name": "kortex-memory",
+  "displayName": "Kortex Memory",
+  "version": "0.1.0",
+  "description": "Persistent, governed memory for Claude Code. Remember decisions once; recall them in every future session, across every tool on the team.",
+  "author": {
+    "name": "Kortex Memory",
+    "url": "https://github.com/vedantnimbarte/kortex-memory"
+  },
+  "homepage": "https://github.com/vedantnimbarte/kortex-memory",
+  "repository": "https://github.com/vedantnimbarte/kortex-memory",
+  "keywords": ["memory", "mcp", "rag", "context", "recall"],
+  "userConfig": {
+    "mcp_url": {
+      "type": "string",
+      "title": "Kortex MCP endpoint",
+      "description": "The SSE endpoint of your Kortex MCP server, e.g. https://kortex.example.com:8765/sse. For a local `make dev` stack this is http://localhost:8765/sse.",
+      "default": "http://localhost:8765/sse",
+      "required": true
+    },
+    "api_key": {
+      "type": "string",
+      "title": "Kortex API key",
+      "description": "A kx_* key from `kortex key create`. Scoped to one org, so it decides which memories this machine can read and write.",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/"
+}

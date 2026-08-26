@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "kortex",
+  "description": "Multi-tenant memory for AI coding agents — governed, searchable, and shared across tools.",
+  "owner": {
+    "name": "Vedant Nimbarte",
+    "url": "https://github.com/vedantnimbarte"
+  },
+  "plugins": [
+    {
+      "name": "kortex-memory",
+      "description": "Give Claude Code a memory that survives the session, is shared across your team, and can be reviewed and audited.",
+      "source": "./plugin",
+      "category": "productivity"
+    }
+  ]
+}

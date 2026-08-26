@@ -11,6 +11,7 @@ repo_name: kortex-memory
 exclude_docs: |
   market-research.md
   implementation-plan.md
+  distribution.md
 
 theme:
   name: material
@@ -42,6 +43,11 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Portability: portability.md
+  - Integrations:
+      - Claude Code: integrations/claude-code.md
+      - Cursor: integrations/cursor.md
+      - Codex: integrations/codex.md
+      - OpenCode: integrations/opencode.md
   - Architecture:
       - Overview: architecture/overview.md
       - ADRs:
