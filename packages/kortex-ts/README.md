@@ -132,6 +132,7 @@ Same auth, same retries, same error mapping; just untyped.
 | `update(id, options)` / `forget(id)` | edit, soft-delete |
 | `pin(id)` / `unpin(id)` / `bulk(action, ids)` | curate |
 | `register(...)` / `login(...)` / `whoami()` | auth |
+| `memoryTool(command, options?)` | back Claude's native `memory_20250818` tool with this scope |
 | `request(method, path, init?)` | anything else |
 
 Every method takes `scope` to override the client default; `search` and

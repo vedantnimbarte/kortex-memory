@@ -41,6 +41,7 @@ export type {
   Citation,
   ConflictNote,
   Memory,
+  MemoryToolResult,
   Recall,
   Scope,
   SearchHit,

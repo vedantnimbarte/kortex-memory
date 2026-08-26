@@ -620,6 +620,64 @@ class MemoryRepository(BaseRepository[Memory]):
         ids = [h.memory_id for h in hits if h.memory_id != memory.id][:limit]
         return await self.list_by_ids(ids)
 
+    # ---- metadata addressing ----
+
+    async def find_by_metadata(
+        self,
+        *,
+        scope_type: ScopeType,
+        scope_id: int,
+        key: str,
+        value: str,
+    ) -> Memory | None:
+        """One memory in a scope whose metadata key equals ``value``.
+
+        Used by the Claude memory-tool backend, where a path in metadata is the
+        file's identity. Held-for-review memories are **included** on purpose:
+        they are invisible to recall, but they still occupy their path, and a
+        lookup that skipped them would let a second row be minted at the same
+        address.
+        """
+        stmt = (
+            self.tenant_query()
+            .where(
+                Memory.deleted_at.is_(None),
+                Memory.scope_type == scope_type.value,
+                Memory.scope_id == scope_id,
+                Memory.metadata_[key].astext == value,
+            )
+            .order_by(Memory.id)
+            .limit(1)
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def list_by_metadata_key(
+        self,
+        *,
+        scope_type: ScopeType,
+        scope_id: int,
+        key: str,
+        limit: int = 1000,
+    ) -> list[Memory]:
+        """Every memory in a scope carrying ``key`` in its metadata.
+
+        ponytail: no index on the JSONB key and a flat cap of 1000. Fine for a
+        memory-tool directory, which is a handful of files by design -- add a
+        GIN index on metadata if this is ever asked to page a real corpus.
+        """
+        stmt = (
+            self.tenant_query()
+            .where(
+                Memory.deleted_at.is_(None),
+                Memory.scope_type == scope_type.value,
+                Memory.scope_id == scope_id,
+                Memory.metadata_[key].astext.isnot(None),
+            )
+            .order_by(Memory.id)
+            .limit(limit)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
     # ---- deduplication ----
 
     async def find_by_content_hash(

@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 
 from kortex import _transport as t
-from kortex.models import Memory, Recall, SearchResult, Tokens
+from kortex.models import Memory, MemoryToolResult, Recall, SearchResult, Tokens
 
 __version__ = "0.1.0"
 USER_AGENT = f"kortex-python/{__version__}"
@@ -137,6 +137,25 @@ def _recall(
                 "per_item_max": per_item_max,
                 "latency_budget_ms": latency_budget_ms,
                 "token_budget": token_budget,
+            }
+        ),
+    )
+
+
+def _memory_tool(
+    command: dict[str, Any],
+    scope: Scope,
+    sensitivity: str | None,
+) -> t.Request:
+    return t.Request(
+        "POST",
+        "/v1/memory-tool",
+        json=_drop_none(
+            {
+                "command": command,
+                "scope_type": scope[0],
+                "scope_id": scope[1],
+                "sensitivity": sensitivity,
             }
         ),
     )
@@ -437,6 +456,37 @@ class Kortex(_Base):
             )
         )
 
+    def memory_tool(
+        self,
+        command: dict[str, Any],
+        *,
+        scope: Scope | None = None,
+        sensitivity: str | None = None,
+    ) -> MemoryToolResult:
+        """Back Claude's native ``memory_20250818`` tool with this scope.
+
+        Pass the ``tool_use`` block's ``input`` straight in and put the result
+        straight back:
+
+            >>> for block in response.content:
+            ...     if block.type == "tool_use" and block.name == "memory":
+            ...         answer = kx.memory_tool(block.input)
+            ...         results.append({
+            ...             "type": "tool_result",
+            ...             "tool_use_id": block.id,
+            ...             "content": answer.content,
+            ...             "is_error": answer.is_error,
+            ...         })
+
+        Claude's memory files become ordinary Kortex memories: governed by the
+        same review gating and PII scanning, visible to the MCP tools and the
+        console, shared across a team, exportable, and soft-deleted rather than
+        erased.
+        """
+        return MemoryToolResult._from(
+            self._send(_memory_tool(command, self._resolve(scope), sensitivity))
+        )
+
     def get(self, memory_id: str) -> Memory:
         return Memory._from(self._send(t.Request("GET", f"/v1/memories/{memory_id}")))
 
@@ -678,6 +728,18 @@ class AsyncKortex(_Base):
                     token_budget=token_budget,
                 )
             )
+        )
+
+    async def memory_tool(
+        self,
+        command: dict[str, Any],
+        *,
+        scope: Scope | None = None,
+        sensitivity: str | None = None,
+    ) -> MemoryToolResult:
+        """See :meth:`Kortex.memory_tool`."""
+        return MemoryToolResult._from(
+            await self._send(_memory_tool(command, self._resolve(scope), sensitivity))
         )
 
     async def get(self, memory_id: str) -> Memory:

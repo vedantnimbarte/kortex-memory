@@ -37,6 +37,7 @@ from kortex_api.routers import (
     health,
     ingest,
     memories,
+    memory_tool,
     orgs,
     projects,
     review,
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(conversations.router)
     app.include_router(memories.router)
+    app.include_router(memory_tool.router)
     app.include_router(review.router)
     app.include_router(attachments.router)
     app.include_router(search.router)
