@@ -158,6 +158,33 @@ async def test_ordinary_writes_and_reads_are_not_audited(session) -> None:  # ty
     assert await _actions(session, principal) == []
 
 
+async def test_a_system_principal_bound_to_an_org_can_audit(session) -> None:  # type: ignore[no-untyped-def]
+    """Workers and the memory-tool backend run as superusers bound to one org.
+    Discarding their org because of the superuser flag made every audit site
+    they touch raise -- which is what 102 failing tests looked like."""
+    principal, _ = await _owner(session, "aud18@acme.io", "Audit Eighteen")
+    system = Principal(
+        actor_id=0, actor_kind=ActorKind.SYSTEM, org_id=principal.org_id, is_superuser=True
+    )
+    entry = await AuditRepository(session, principal=system).append(
+        actor_kind=ActorKind.SYSTEM, actor_id=None, action=str(AuditAction.AUDIT_PURGED)
+    )
+    await session.flush()
+    assert entry.org_id == principal.org_id
+
+
+async def test_an_unbound_superuser_must_name_the_org(session) -> None:  # type: ignore[no-untyped-def]
+    """org_id 0 is the sentinel a global admin carries, not a tenant. Filing an
+    entry under it would invent one."""
+    unbound = Principal(actor_id=0, actor_kind=ActorKind.SYSTEM, org_id=0, is_superuser=True)
+    repo = AuditRepository(session, principal=unbound)
+
+    with pytest.raises(ValueError, match="requires an org"):
+        await repo.append(
+            actor_kind=ActorKind.SYSTEM, actor_id=None, action=str(AuditAction.AUDIT_PURGED)
+        )
+
+
 # --- integrity: try to break it ----------------------------------------------
 
 

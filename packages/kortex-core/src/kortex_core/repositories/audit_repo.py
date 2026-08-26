@@ -113,10 +113,12 @@ class AuditRepository(BaseRepository[AuditLog]):
         context_ip, context_agent = current_origin()
         ip = ip or context_ip
         user_agent = user_agent or context_agent
-        principal_org = self.principal.org_id if not self.principal.is_superuser else None
-        effective_org = org_id if org_id is not None else principal_org
-        if effective_org is None:
-            raise ValueError("audit append requires an org_id (no principal org)")
+        effective_org = org_id if org_id is not None else self._principal_org()
+        if not effective_org:
+            raise ValueError(
+                "audit append requires an org: pass org_id, or use a principal "
+                "bound to one. An unbound superuser has no tenant to file this under."
+            )
         entry = AuditLog(
             org_id=effective_org,
             actor_kind=actor_kind.value,
@@ -136,6 +138,28 @@ class AuditRepository(BaseRepository[AuditLog]):
         entry.entry_hash = digest(entry, entry.prev_hash or GENESIS)
         await self._session.flush()
         return entry
+
+    def _principal_org(self) -> int | None:
+        """The org to file an entry under, from the principal, or None.
+
+        A superuser's ``org_id`` counts when it is set. The system principals
+        the workers and the memory-tool backend construct are superusers *bound
+        to a specific org* — discarding their org because of the superuser flag
+        made every audit site they touch raise, which is how this method came
+        to exist.
+
+        An unbound superuser (``org_id == 0``, the sentinel a global admin
+        carries) still has no tenant, and the caller has to say which one.
+        Filing it under org 0 would invent a tenant that does not exist.
+
+        A principal that was never set at all is not an error here either: the
+        caller may have passed ``org_id`` explicitly, which is what the auth
+        service does, since it audits before a principal exists.
+        """
+        principal = self._principal
+        if principal is None:
+            return None
+        return principal.org_id or None
 
     async def _lock_head(self, org_id: int) -> str:
         """The current head digest for an org, with the row locked.
