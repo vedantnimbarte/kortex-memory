@@ -124,7 +124,7 @@ kubectl -n kortex create secret generic kortex-llm \
 
 ```bash
 kubectl -n kortex run --rm -it migrate \
-  --image=ghcr.io/anthropic/kortex-api:0.1.0 \
+  --image=ghcr.io/vedantnimbarte/kortex-api:main \
   --restart=Never \
   --env=KORTEX_DATABASE_URL=postgresql+asyncpg://... \
   --command -- alembic upgrade head
