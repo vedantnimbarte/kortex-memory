@@ -30,6 +30,9 @@ from kortex_core.security.request_context import current_origin
 GENESIS = "0" * 64
 """What the first entry in an org's chain points at."""
 
+VERIFY_PAGE = 500
+"""Rows per batch when walking a chain. Bounded memory, no open cursor."""
+
 
 def digest(entry: AuditLog, prev_hash: str) -> str:
     """The canonical digest of one entry.
@@ -223,64 +226,54 @@ class AuditRepository(BaseRepository[AuditLog]):
         externally recorded head are what cover that; ``anchor_prev`` is
         reported so the gap is visible rather than implied.
         """
-        # stream(), not execute(): yield_per opens a server-side cursor, and an
-        # async session refuses to hand one back through execute(). Streaming
-        # matters here -- verification walks the whole log, and a year of it
-        # should not be materialised to check a hash.
-        stmt = (
-            select(AuditLog)
-            .where(AuditLog.org_id == org_id)
-            .order_by(AuditLog.id)
-            .execution_options(yield_per=500)
-        )
-        # Closed deterministically. A streaming result left open holds a
-        # server-side cursor for the rest of the session, and Postgres then
-        # refuses DDL on the table -- which is how this surfaced: a test that
-        # verified and then tried to disable the trigger.
-        result = await self._session.stream(stmt)
-        try:
-            return await self._walk(org_id, result)
-        finally:
-            await result.close()
-
-    async def _walk(self, org_id: int, result: Any) -> ChainStatus:
+        # Paged by id rather than streamed. A yield_per cursor is bound to the
+        # transaction, so it keeps a server-side portal open past the last row
+        # and Postgres then refuses DDL on the table for the rest of that
+        # transaction. Paging is bounded in memory, holds nothing between
+        # batches, and the log is low-volume by design -- five categories of
+        # event, not every read.
         expected: str | None = None
         anchor = GENESIS
         entries = unchained = 0
-        async for entry in result.scalars():
-            entries += 1
-            if expected is None and entry.entry_hash is not None:
-                expected = entry.prev_hash or GENESIS
-                anchor = expected
-            if entry.entry_hash is None:
-                unchained += 1
-                continue
-            if entry.prev_hash != expected:
-                return ChainStatus(
-                    org_id=org_id,
-                    entries=entries,
-                    unchained=unchained,
-                    intact=False,
-                    broken_at=entry.id,
-                    anchor_prev=anchor,
-                    detail=(
-                        f"expected prev_hash {(expected or GENESIS)[:12]}…, "
-                        f"found {(entry.prev_hash or 'null')[:12]}… — "
-                        "an earlier entry was altered or removed"
-                    ),
-                )
-            recomputed = digest(entry, entry.prev_hash or GENESIS)
-            if recomputed != entry.entry_hash:
-                return ChainStatus(
-                    org_id=org_id,
-                    entries=entries,
-                    unchained=unchained,
-                    intact=False,
-                    broken_at=entry.id,
-                    anchor_prev=anchor,
-                    detail="this entry's content no longer matches its digest",
-                )
-            expected = entry.entry_hash
+        after = 0
+        while True:
+            page = await self.read(org_id=org_id, after_id=after, limit=VERIFY_PAGE)
+            if not page:
+                break
+            after = page[-1].id
+            for entry in page:
+                entries += 1
+                if entry.entry_hash is None:
+                    unchained += 1
+                    continue
+                if expected is None:
+                    expected = entry.prev_hash or GENESIS
+                    anchor = expected
+                if entry.prev_hash != expected:
+                    return ChainStatus(
+                        org_id=org_id,
+                        entries=entries,
+                        unchained=unchained,
+                        intact=False,
+                        broken_at=entry.id,
+                        anchor_prev=anchor,
+                        detail=(
+                            f"expected prev_hash {(expected or GENESIS)[:12]}…, "
+                            f"found {(entry.prev_hash or 'null')[:12]}… — "
+                            "an earlier entry was altered or removed"
+                        ),
+                    )
+                if digest(entry, entry.prev_hash or GENESIS) != entry.entry_hash:
+                    return ChainStatus(
+                        org_id=org_id,
+                        entries=entries,
+                        unchained=unchained,
+                        intact=False,
+                        broken_at=entry.id,
+                        anchor_prev=anchor,
+                        detail="this entry's content no longer matches its digest",
+                    )
+                expected = entry.entry_hash
         return ChainStatus(
             org_id=org_id,
             entries=entries,
