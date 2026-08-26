@@ -120,6 +120,13 @@ class AuditRepository(BaseRepository[AuditLog]):
                 "bound to one. An unbound superuser has no tenant to file this under."
             )
         entry = AuditLog(
+            # Stamped here rather than by the server default, because the digest
+            # has to cover created_at and has to be computed *before* the
+            # INSERT: writing the row first and then updating it with its own
+            # hash is an UPDATE, and the append-only trigger refuses those. The
+            # value is the one that gets stored and hashed either way, so what
+            # matters is that it is consistent, not whose clock produced it.
+            created_at=dt.datetime.now(tz=dt.UTC),
             org_id=effective_org,
             actor_kind=actor_kind.value,
             actor_id=actor_id,
@@ -131,11 +138,8 @@ class AuditRepository(BaseRepository[AuditLog]):
             user_agent=user_agent,
         )
         entry.prev_hash = await self._lock_head(effective_org)
+        entry.entry_hash = digest(entry, entry.prev_hash)
         self._session.add(entry)
-        # Flushed before hashing so the server default has produced created_at:
-        # hashing a null timestamp and storing a real one verifies as broken.
-        await self._session.flush()
-        entry.entry_hash = digest(entry, entry.prev_hash or GENESIS)
         await self._session.flush()
         return entry
 
