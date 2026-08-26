@@ -35,7 +35,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test test",
+    "test": "node --test test/client.test.js",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
