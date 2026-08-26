@@ -46,6 +46,7 @@ kortex-memory/
 │   ├── kortex-cli/     # `kortex` Typer CLI (admin + user)
 │   ├── kortex-web/     # Vite + React + TypeScript web console (SPA)
 │   └── kortex-worker/  # Celery worker (embed, decay, consolidate, attachments, summaries) + beat
+├── plugin/             # Claude Code plugin: MCP server + the kortex-memory skill
 ├── alembic/            # database migrations
 ├── docker/             # api/mcp/worker/web Dockerfiles + compose.yaml + web-nginx.conf
 ├── deploy/
@@ -242,7 +243,14 @@ you only need to set the secrets.
 
 ## Wire an agent to your local Kortex
 
-One command per harness — Claude Code, Cursor, Codex, or OpenCode:
+For Claude Code there is a plugin that configures itself:
+
+```
+/plugin marketplace add vedantnimbarte/kortex-memory
+/plugin install kortex-memory@kortex
+```
+
+Otherwise, one command per harness — Claude Code, Cursor, Codex, or OpenCode:
 
 ```bash
 kortex init claude-code
@@ -280,6 +288,8 @@ Restart the agent — it now sees the 16 Kortex tools.
 
 </details>
 
+One guide per harness in [docs/integrations/](docs/integrations/) — the
+harness-specific details, the manual config, and what breaks first.
 Full detail, CLI profiles, and troubleshooting in [RUNNING_LOCALLY.md](RUNNING_LOCALLY.md).
 
 ## Common tasks

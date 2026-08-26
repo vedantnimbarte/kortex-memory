@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.vedantnimbarte/kortex-memory",
+  "title": "Kortex Memory",
+  "description": "Multi-tenant memory for LLMs and AI coding agents: hybrid retrieval over your own Postgres, with scopes, RBAC, sensitivity tiers, contradiction surfacing and an auditable review queue.",
+  "repository": {
+    "url": "https://github.com/vedantnimbarte/kortex-memory",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/vedantnimbarte/kortex-mcp",
+      "version": "latest",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "KORTEX_API_KEY",
+          "description": "A kx_* key from `kortex key create`. Scopes every read and write to one org.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "KORTEX_DATABASE_URL",
+          "description": "Async SQLAlchemy DSN for the Kortex Postgres, e.g. postgresql+asyncpg://kortex:kortex@localhost:5432/kortex. The stdio transport talks to the database directly; use the SSE remote below if the client has no database access.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "http://localhost:8765/sse",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <kx_* API key>. Kortex is self-hosted, so replace the host with your own deployment.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
