@@ -88,6 +88,14 @@ class KortexSettings(BaseSettings):
     attachment_chunk_overlap: int = 64
     attachment_max_bytes: int = 64 * 1024 * 1024
 
+    # --- Audit ---
+    audit_retention_days: int = 0
+    """Delete audit entries older than this many days. 0 disables retention.
+
+    Off by default on purpose: deleting a customer's compliance evidence
+    because a default said so is not a mistake anyone should make by not
+    reading the settings. The purge is itself audited."""
+
     # --- Auth ---
     jwt_secret: SecretStr = SecretStr(_INSECURE_JWT_SECRET)
     jwt_algorithm: str = "HS512"

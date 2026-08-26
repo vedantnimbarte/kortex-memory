@@ -1,4 +1,10 @@
-"""Append-only audit log."""
+"""Append-only audit log.
+
+Append-only is enforced, not merely intended: a trigger refuses UPDATE and
+refuses DELETE outside a session that has opted in for retention, and every row
+carries a hash chained to the previous one for its org. See migration kkx0011
+for why both are there.
+"""
 
 from __future__ import annotations
 
@@ -40,3 +46,10 @@ class AuditLog(Base):
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    entry_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """SHA-256 over this row's content and ``prev_hash``. Null on rows written
+    before chaining existed; the verifier reports those as unchained rather
+    than pretending they were covered."""
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """The previous entry's ``entry_hash`` for this org, or the genesis marker."""

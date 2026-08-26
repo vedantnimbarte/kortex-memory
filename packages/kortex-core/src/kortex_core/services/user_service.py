@@ -7,8 +7,10 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kortex_core.audit import AuditAction
 from kortex_core.db.types import Role, ScopeType
 from kortex_core.models.user import Membership, User
+from kortex_core.repositories.audit_repo import AuditRepository
 from kortex_core.repositories.membership_repo import MembershipRepository
 from kortex_core.repositories.user_repo import UserRepository
 from kortex_core.security.passwords import hash_password
@@ -87,17 +89,61 @@ class UserService:
         )
         if not allowed:
             raise AccessDeniedError(f"not authorized to grant {role.value} on {target}")
-        return await self._memberships.grant(
+        membership = await self._memberships.grant(
             user_id=user_id,
             scope_type=scope_type,
             scope_id=scope_id,
             role=role,
         )
+        await self._audit(
+            AuditAction.MEMBER_GRANTED,
+            user_id=user_id,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            role=role.value,
+        )
+        return membership
 
     async def revoke(self, *, user_id: int, scope_type: ScopeType, scope_id: int) -> bool:
         target = ScopeRef(type=scope_type, id=scope_id)
         if not self._ac.can_admin(self._principal, target):
             raise AccessDeniedError(f"not authorized to revoke on {target}")
-        return await self._memberships.revoke(
+        revoked = await self._memberships.revoke(
             user_id=user_id, scope_type=scope_type, scope_id=scope_id
+        )
+        if revoked:
+            await self._audit(
+                AuditAction.MEMBER_REVOKED,
+                user_id=user_id,
+                scope_type=scope_type,
+                scope_id=scope_id,
+            )
+        return revoked
+
+    async def _audit(
+        self,
+        action: AuditAction,
+        *,
+        user_id: int,
+        scope_type: ScopeType,
+        scope_id: int,
+        role: str | None = None,
+    ) -> None:
+        """Record a membership change.
+
+        The target is the *user* whose access changed, not the scope: "who can
+        reach this" is the question an access review asks, and answering it
+        from scope-keyed rows means a join the reviewer has to know to make.
+        """
+        await AuditRepository(self._session, principal=self._principal).append(
+            actor_kind=self._principal.actor_kind,
+            actor_id=self._principal.actor_id,
+            action=str(action),
+            target_type="user",
+            target_id=user_id,
+            metadata={
+                "scope_type": scope_type.value,
+                "scope_id": scope_id,
+                **({"role": role} if role else {}),
+            },
         )

@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kortex_core.audit import AuditAction
 from kortex_core.db.types import (
     MemoryKind,
     MemorySource,
@@ -37,6 +38,7 @@ from kortex_core.db.types import (
     Sensitivity,
 )
 from kortex_core.repositories.attachment_repo import AttachmentRepository
+from kortex_core.repositories.audit_repo import AuditRepository
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
 from kortex_core.security.principal import Principal
 from kortex_core.services.attachment_service import AttachmentService
@@ -225,6 +227,17 @@ class ExportService:
             ],
         )
         tar.close()
+        # Audited before the bytes leave: an export is the single largest data
+        # egress the product performs, and it is the first thing a security
+        # reviewer asks to see a record of.
+        await AuditRepository(self._session, principal=self._principal).append(
+            actor_kind=self._principal.actor_kind,
+            actor_id=self._principal.actor_id,
+            action=str(AuditAction.SCOPE_EXPORTED),
+            target_type=scope_type.value,
+            target_id=scope_id,
+            metadata={"counts": manifest.counts, "attachments": include_attachments},
+        )
         yield buf.getvalue()
 
     async def import_from_tar(
@@ -315,6 +328,18 @@ class ExportService:
                 await att_svc.finalize(result.attachment.public_id)
             created_attachments += 1
 
+        await AuditRepository(self._session, principal=self._principal).append(
+            actor_kind=self._principal.actor_kind,
+            actor_id=self._principal.actor_id,
+            action=str(AuditAction.SCOPE_IMPORTED),
+            target_type=target_scope_type.value,
+            target_id=target_scope_id,
+            metadata={
+                "memories": created_memories,
+                "links": created_links,
+                "attachments": created_attachments,
+            },
+        )
         return ImportResult(
             memories=created_memories,
             links=created_links,

@@ -15,6 +15,7 @@ def make_celery() -> Celery:
         broker=s.redis_url,
         backend=s.redis_url,
         include=[
+            "kortex_worker.tasks.audit",
             "kortex_worker.tasks.embedding",
             "kortex_worker.tasks.attachments",
             "kortex_worker.tasks.decay",
@@ -67,6 +68,13 @@ def make_celery() -> Celery:
             # Daily at 03:00 UTC; Celery beat uses crontab semantics here.
             "task": "kortex.consolidate.consolidate_tier",
             "schedule": _daily_at(3, 0),
+        },
+        "audit-retention": {
+            # Daily at 04:00 UTC, an hour after consolidation so the two long
+            # write jobs do not contend. A no-op unless audit_retention_days
+            # is set, which it is not by default.
+            "task": "kortex.audit.purge_expired",
+            "schedule": _daily_at(4, 0),
         },
         "generate-summary": {
             "task": "kortex.summary.generate_summary",

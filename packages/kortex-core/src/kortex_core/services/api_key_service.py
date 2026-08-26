@@ -8,9 +8,11 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kortex_core.audit import AuditAction
 from kortex_core.db.types import ActorKind, ScopeType
 from kortex_core.models.api_key import ApiKey
 from kortex_core.repositories.api_key_repo import ApiKeyRepository
+from kortex_core.repositories.audit_repo import AuditRepository
 from kortex_core.security.api_keys import generate_api_key
 from kortex_core.security.principal import Principal
 from kortex_core.services.access_control import AccessDeniedError
@@ -29,6 +31,7 @@ class MintedApiKey:
 class ApiKeyService:
     def __init__(self, session: AsyncSession, principal: Principal):
         self._repo = ApiKeyRepository(session, principal=principal)
+        self._audit = AuditRepository(session, principal=principal)
         self._principal = principal
 
     async def mint(
@@ -68,10 +71,30 @@ class ApiKeyService:
             expires_at=expires_at,
             created_by=created_by,
         )
+        await self._audit.append(
+            actor_kind=self._principal.actor_kind,
+            actor_id=self._principal.actor_id,
+            action=str(AuditAction.API_KEY_CREATED),
+            target_type="api_key",
+            target_id=key.id,
+            # The prefix identifies the key in later events; the secret is
+            # never written anywhere but the caller's response.
+            metadata={"name": name, "prefix": material.prefix, "scopes": sorted(scopes)},
+        )
         return MintedApiKey(plaintext=material.plaintext, api_key=key)
 
     async def list_(self) -> list[ApiKey]:
         return await self._repo.list_for_org()
 
     async def revoke(self, public_id: uuid.UUID) -> ApiKey | None:
-        return await self._repo.revoke(public_id)
+        key = await self._repo.revoke(public_id)
+        if key is not None:
+            await self._audit.append(
+                actor_kind=self._principal.actor_kind,
+                actor_id=self._principal.actor_id,
+                action=str(AuditAction.API_KEY_REVOKED),
+                target_type="api_key",
+                target_id=key.id,
+                metadata={"name": key.name, "prefix": key.prefix},
+            )
+        return key
