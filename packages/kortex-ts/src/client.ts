@@ -17,11 +17,13 @@
 import { APIConnectionError, APIError, errorFor } from "./errors.js";
 import {
   type Memory,
+  type MemoryToolResult,
   type Recall,
   type Scope,
   type SearchResult,
   type Tokens,
   toMemory,
+  toMemoryToolResult,
   toRecall,
   toSearchResult,
   toTokens,
@@ -377,6 +379,47 @@ export class Kortex {
           per_item_max: options.perItemMax ?? 800,
           latency_budget_ms: options.latencyBudgetMs ?? 0,
           token_budget: options.tokenBudget ?? 0,
+        }),
+      }),
+    );
+  }
+
+  /**
+   * Back Claude's native `memory_20250818` tool with this scope.
+   *
+   * Pass the `tool_use` block's `input` straight in and put the result
+   * straight back:
+   *
+   * ```ts
+   * for (const block of response.content) {
+   *   if (block.type === "tool_use" && block.name === "memory") {
+   *     const answer = await kx.memoryTool(block.input);
+   *     results.push({
+   *       type: "tool_result",
+   *       tool_use_id: block.id,
+   *       content: answer.content,
+   *       is_error: answer.isError,
+   *     });
+   *   }
+   * }
+   * ```
+   *
+   * Claude's memory files become ordinary Kortex memories: governed by the same
+   * review gating and PII scanning, visible to the MCP tools and the console,
+   * shared across a team, exportable, and soft-deleted rather than erased.
+   */
+  async memoryTool(
+    command: Record<string, unknown>,
+    options: { scope?: Scope; sensitivity?: string } = {},
+  ): Promise<MemoryToolResult> {
+    const scope = this.#resolveScope(options.scope);
+    return toMemoryToolResult(
+      await this.#send("POST", "/v1/memory-tool", {
+        body: compact({
+          command,
+          scope_type: scope.type,
+          scope_id: scope.id,
+          sensitivity: options.sensitivity,
         }),
       }),
     );

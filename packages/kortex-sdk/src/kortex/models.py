@@ -271,3 +271,22 @@ class Tokens:
             refresh_token=str(d.get("refresh_token", "")),
             expires_in=int(d.get("expires_in", 0)),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryToolResult:
+    """The answer to one of Claude's ``memory_20250818`` commands.
+
+    Both fields go straight onto the ``tool_result`` block -- ``content`` as its
+    content, ``is_error`` as its ``is_error``. Claude reads the text and
+    corrects itself, so a failed command is a normal return here rather than an
+    exception: raising would force every integration to catch it and turn it
+    back into a string anyway.
+    """
+
+    content: str
+    is_error: bool
+
+    @classmethod
+    def _from(cls, d: dict[str, Any]) -> MemoryToolResult:
+        return cls(content=str(d.get("content", "")), is_error=bool(d.get("is_error", False)))

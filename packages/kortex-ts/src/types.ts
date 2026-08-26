@@ -258,3 +258,21 @@ export function asPrompt(bundle: Recall, separator = "\n\n"): string {
     .map((c) => (c.title ? `${c.title}\n${c.body}`.trim() : c.body))
     .join(separator);
 }
+
+/**
+ * The answer to one of Claude's `memory_20250818` commands.
+ *
+ * Both fields go straight onto the `tool_result` block. Claude reads the text
+ * and corrects itself, so a failed command is a normal return rather than a
+ * thrown error: throwing would force every integration to catch it and turn it
+ * back into a string anyway.
+ */
+export interface MemoryToolResult {
+  content: string;
+  isError: boolean;
+}
+
+export function toMemoryToolResult(value: unknown): MemoryToolResult {
+  const d = obj(value);
+  return { content: str(d["content"]), isError: bool(d["is_error"]) };
+}

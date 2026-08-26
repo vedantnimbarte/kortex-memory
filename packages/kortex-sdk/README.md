@@ -135,6 +135,7 @@ Same auth, same retries, same error mapping; just untyped.
 | `update(memory_id, ...)` / `forget(memory_id)` | edit, soft-delete |
 | `pin(memory_id)` / `unpin(memory_id)` / `bulk(action, ids)` | curate |
 | `register(email, password, org_name)` / `login(email, password)` / `whoami()` | auth |
+| `memory_tool(command, *, scope, sensitivity)` | back Claude's native `memory_20250818` tool with this scope |
 | `request(method, path, *, json, params)` | anything else |
 
 Every method takes `scope=("project", 7)` to override the client default;

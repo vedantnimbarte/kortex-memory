@@ -55,6 +55,7 @@ nav:
       - Python SDK: api/python.md
       - TypeScript SDK: api/typescript.md
       - MCP: api/mcp.md
+      - Claude memory tool: api/memory-tool.md
   - Operators:
       - Deploy: operators/deploy.md
       - Scale: operators/scale.md
