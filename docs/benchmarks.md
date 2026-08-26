@@ -32,6 +32,35 @@ benchmark exists to avoid.
 Alongside both: **p50/p95/p99 latency**, measured end-to-end over HTTP, for
 `hybrid` and `agentic` modes on the same corpus.
 
+### The frontier, and the decision that hangs on it
+
+Agentic recall buys accuracy with latency and tokens. Whether that trade is
+worth making cannot be answered by one agentic run at one latency — a single
+disappointing number cannot tell "the mode is bad" apart from "the mode was
+under-budgeted".
+
+So the harness sweeps. `--budget-ms` is repeatable and runs agentic once per
+latency ceiling; the report renders the curve plus a computed verdict:
+
+```
+| budget (ms) | accuracy | p95 (s) | vs hybrid |
+|---|---|---|---|
+| — (hybrid)  |   …      |   …     | baseline  |
+| 250         |   …      |   …     |    …      |
+| 1000        |   …      |   …     |    …      |
+| 4000        |   …      |   …     |    …      |
+```
+
+The verdict is computed rather than eyeballed, deliberately. The temptation on
+reading a disappointing table is to find a reason it does not count, and a
+sentence written before anyone has seen the numbers is harder to argue with
+than one written after. If agentic loses at every budget, the harness says so
+and names the change: `KORTEX_AGENTIC_RETRIEVAL=false`, demoting it to opt-in.
+
+It also refuses to conclude where it should. A suite with no ground truth and
+no judge, or a sample under 30 questions, gets "not decidable" or an explicit
+"indicative, not conclusive" instead of a verdict.
+
 ## Results
 
 _None yet._ When a run completes, paste the table `scripts.eval.run` prints,
@@ -56,9 +85,15 @@ kortex doctor
 export KORTEX_API_URL=http://localhost:8000 KORTEX_API_KEY=kx_...
 python -m scripts.eval.run \
   --suite longmemeval --data data/longmemeval_s.json \
-  --mode hybrid --mode agentic --judge \
+  --mode hybrid --mode agentic \
+  --budget-ms 250 --budget-ms 1000 --budget-ms 4000 \
+  --judge \
   --out eval-longmemeval.json
 ```
+
+Set `KORTEX_LLM_PRICES` first if the table should carry dollars, and start with
+`--limit 20` to confirm the pipeline works before committing to a run that
+ingests a haystack per question and takes hours.
 
 Full instructions, dataset sources, and the expected schemas are in
 [`scripts/eval/README.md`](https://github.com/vedantnimbarte/kortex-memory/blob/main/scripts/eval/README.md).
@@ -74,13 +109,15 @@ Full instructions, dataset sources, and the expected schemas are in
 
 ## Known gaps in the harness
 
-- **Cost is reported only when priced.** Recall now returns `usage` with token
-  counts and latency, but `cost_usd` is null unless `KORTEX_LLM_PRICES` is
-  configured. Set it before a run if you want dollar figures in the table.
-- **No latency-budget sweep yet.** Recall accepts `latency_budget_ms`, so the
-  inputs for LongMemEval-V2's LAFS metric now exist, but the harness still
-  measures one point per mode rather than sweeping budgets to trace the
-  accuracy-latency frontier.
+- **Cost is reported only when priced.** `cost_usd` is null unless
+  `KORTEX_LLM_PRICES` is configured. The harness now says so in the caveats
+  rather than leaving a blank column: null means unpriced, never free.
+- **The judge is the model you configured.** Grading with the same family the
+  system answers with is a known bias in this kind of benchmark. Point
+  `KORTEX_LLM_PROVIDER` at a different vendor for the judge if the number will
+  be published as a comparison.
+- **Nothing has been run.** That is the only remaining gap, and it is not a
+  code gap — see "Why this page is empty".
 
 ## Regression gate
 

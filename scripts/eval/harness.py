@@ -57,6 +57,8 @@ class EvalRun:
         top_k: int = 10,
         synthesize: bool = False,
         keep_scope: bool = False,
+        latency_budget_ms: int = 0,
+        token_budget: int = 0,
     ):
         if mode not in ("hybrid", "agentic"):
             raise HarnessError(f"unknown mode {mode!r}; expected hybrid or agentic")
@@ -65,6 +67,8 @@ class EvalRun:
         self._top_k = top_k
         self._synthesize = synthesize
         self._keep = keep_scope
+        self._latency_budget_ms = latency_budget_ms
+        self._token_budget = token_budget
         self._client = backend.client()
 
     def close(self) -> None:
@@ -175,6 +179,14 @@ class EvalRun:
         else:
             path = "/v1/search/recall"
             payload["synthesize"] = self._synthesize
+            # The budgets are what make a frontier possible. A ceiling too small
+            # for a planner round trip degrades to plain hybrid rather than
+            # overshooting, so a swept run measures the real trade-off instead
+            # of one arbitrary point on it.
+            if self._latency_budget_ms:
+                payload["latency_budget_ms"] = self._latency_budget_ms
+            if self._token_budget:
+                payload["token_budget"] = self._token_budget
 
         started = time.perf_counter()
         try:
@@ -206,6 +218,7 @@ class EvalRun:
         # Populated since #12; still read defensively so the harness works
         # against an older deployment rather than crashing on it.
         usage = result.get("usage") or {}
+        cost = usage.get("cost_usd")
         return QueryOutcome(
             question_id=question.question_id,
             category=question.category,
@@ -214,6 +227,7 @@ class EvalRun:
             gold_doc_ids=question.gold_doc_ids,
             answer=str(answer) if answer else None,
             used_tokens=int(usage.get("tokens_in", 0)) + int(usage.get("tokens_out", 0)),
+            cost_usd=float(cost) if cost is not None else None,
         )
 
     # --- cleanup ---

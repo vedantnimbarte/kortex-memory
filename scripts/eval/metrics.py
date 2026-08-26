@@ -35,6 +35,8 @@ class QueryOutcome:
     judged_correct: bool | None = None
     """None when no judge ran — never conflate "unjudged" with "wrong"."""
     used_tokens: int = 0
+    cost_usd: float | None = None
+    """None means unpriced (no KORTEX_LLM_PRICES), never free."""
     error: str | None = None
 
     @property
@@ -110,6 +112,9 @@ class RunReport:
     judge: str = "none"
     latency: dict[str, float] = field(default_factory=dict)
     total_tokens: int = 0
+    total_cost_usd: float | None = None
+    budget_ms: int = 0
+    """The latency ceiling this run was given; 0 means unbounded."""
     errors: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -126,6 +131,7 @@ def summarise(
     outcomes: list[QueryOutcome],
     judge: str = "none",
     ks: tuple[int, ...] = DEFAULT_KS,
+    budget_ms: int = 0,
 ) -> RunReport:
     notes: list[str] = []
     if not any(o.scoreable for o in outcomes):
@@ -145,6 +151,12 @@ def summarise(
             "means the planner never ran — check whether an LLM is configured, or "
             "whether a latency/token budget forced the hybrid path."
         )
+    priced = [o.cost_usd for o in outcomes if o.cost_usd is not None]
+    if mode.startswith("agentic") and not priced:
+        notes.append(
+            "Cost was not measured: the configured model has no price in KORTEX_LLM_PRICES. "
+            "Null means unpriced, not free — an agentic run always spends tokens."
+        )
     errors = sum(1 for o in outcomes if o.error)
     if errors:
         notes.append(f"{errors} question(s) errored and are excluded from every metric.")
@@ -161,6 +173,8 @@ def summarise(
         judge=judge,
         latency=latency_percentiles(outcomes),
         total_tokens=total_tokens,
+        total_cost_usd=sum(priced) if priced else None,
+        budget_ms=budget_ms,
         errors=errors,
         notes=notes,
     )
@@ -218,3 +232,161 @@ def render_markdown(reports: list[RunReport], *, command: str) -> str:
         lines += ["", "**Caveats**", ""]
         lines += [f"- {n}" for n in seen]
     return "\n".join(lines) + "\n"
+
+
+# --- the frontier ------------------------------------------------------------
+
+SMALL_SAMPLE = 30
+"""Below this many scoreable questions, a frontier verdict is a coin flip
+dressed as a finding."""
+
+
+@dataclass(frozen=True, slots=True)
+class Frontier:
+    """Whether agentic recall is worth what it costs, at each budget measured.
+
+    WU-2.6 turns on a specific decision — *if agentic still loses to plain
+    hybrid, say so publicly and demote it to an opt-in mode* — and that
+    decision needs a curve, not two dots. One agentic run at one latency says
+    nothing about whether the mode is bad or merely under-budgeted.
+
+    Computed rather than eyeballed, because the temptation at the moment of
+    reading a disappointing table is to find a reason it does not count.
+    """
+
+    metric: str
+    baseline: float | None
+    baseline_p95: float
+    points: tuple[tuple[int, float | None, float], ...]
+    """(budget_ms, score, p95) per agentic run, ascending by budget."""
+    verdict: str
+    demote: bool
+    """True when the evidence says agentic should not be the default."""
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def _comparable_metric(reports: list[RunReport]) -> str:
+    """Accuracy when a judge ran, otherwise the largest recall@k available.
+
+    Never mixes the two across modes: comparing agentic's accuracy against
+    hybrid's recall is the arithmetic version of a vendor-favourable chart.
+    """
+    if any(r.accuracy is not None for r in reports):
+        return "accuracy"
+    ks = sorted({int(key.split("@")[1]) for r in reports for key in r.recall})
+    return f"recall@{ks[-1]}" if ks else "accuracy"
+
+
+def _score(report: RunReport, metric: str) -> float | None:
+    return report.accuracy if metric == "accuracy" else report.recall.get(metric)
+
+
+def frontier(reports: list[RunReport]) -> Frontier | None:
+    """Compare every agentic run against the hybrid baseline. None if either side
+    is missing — a frontier needs both, and inventing one is worse than saying
+    it was not measured."""
+    hybrid = next((r for r in reports if r.mode == "hybrid"), None)
+    agentic = sorted(
+        (r for r in reports if r.mode.startswith("agentic")), key=lambda r: r.budget_ms
+    )
+    if hybrid is None or not agentic:
+        return None
+
+    metric = _comparable_metric(reports)
+    baseline = _score(hybrid, metric)
+    baseline_p95 = hybrid.latency.get("p95", 0.0)
+    points = tuple((r.budget_ms, _score(r, metric), r.latency.get("p95", 0.0)) for r in agentic)
+
+    if baseline is None:
+        return Frontier(
+            metric=metric,
+            baseline=None,
+            baseline_p95=baseline_p95,
+            points=points,
+            verdict=(
+                f"Not decidable: hybrid has no {metric} to compare against. "
+                "This suite carries no ground truth, so only latency was measured."
+            ),
+            demote=False,
+        )
+
+    wins = [(b, s, p) for b, s, p in points if s is not None and s > baseline]
+    scored = [(b, s, p) for b, s, p in points if s is not None]
+    if not scored:
+        return Frontier(
+            metric=metric,
+            baseline=baseline,
+            baseline_p95=baseline_p95,
+            points=points,
+            verdict=f"Not decidable: no agentic run produced a {metric}.",
+            demote=False,
+        )
+
+    caveat = ""
+    if hybrid.questions < SMALL_SAMPLE:
+        caveat = (
+            f" On {hybrid.questions} questions this is indicative, not conclusive — "
+            f"re-run with at least {SMALL_SAMPLE} before acting on it."
+        )
+
+    if not wins:
+        best_budget, best_score, _ = max(scored, key=lambda point: point[1] or 0.0)
+        return Frontier(
+            metric=metric,
+            baseline=baseline,
+            baseline_p95=baseline_p95,
+            points=points,
+            verdict=(
+                f"**Agentic recall did not beat plain hybrid at any budget measured.** "
+                f"Hybrid {metric}={baseline:.3f}; agentic peaked at {best_score:.3f} "
+                f"({best_budget or 'unbounded'} ms). Per WU-2.6 the finding is published "
+                f"as it stands and agentic is demoted to opt-in: "
+                f"`KORTEX_AGENTIC_RETRIEVAL=false`.{caveat}"
+            ),
+            demote=True,
+        )
+
+    cheapest_win = min(wins, key=lambda point: point[0] or 10**9)
+    budget, score, p95 = cheapest_win
+    cost = f"{p95 / baseline_p95:.1f}x" if baseline_p95 else "an unmeasured multiple of"
+    if len(wins) == len(scored):
+        where = "at every budget measured"
+    else:
+        where = f"only at budgets from {budget or 'unbounded'} ms"
+    return Frontier(
+        metric=metric,
+        baseline=baseline,
+        baseline_p95=baseline_p95,
+        points=points,
+        verdict=(
+            f"Agentic recall beat plain hybrid {where}: {metric} {baseline:.3f} → "
+            f"{score:.3f}, for {cost} the p95 latency. Keeping it as the default is "
+            f"defensible on this evidence.{caveat}"
+        ),
+        demote=False,
+    )
+
+
+def render_frontier(front: Frontier | None) -> str:
+    """The frontier as a table plus the verdict sentence."""
+    if front is None:
+        return (
+            "\n**Frontier:** not measured — needs a `hybrid` run and at least one "
+            "`agentic` run over the same corpus.\n"
+        )
+    lines = [
+        "",
+        "**Accuracy-vs-latency frontier**",
+        "",
+        f"| budget (ms) | {front.metric} | p95 (s) | vs hybrid |",
+        "|---|---|---|---|",
+    ]
+    base = front.baseline
+    lines.append(f"| — (hybrid) | {_fmt(base)} | {_fmt(front.baseline_p95, '.2f')} | baseline |")
+    for budget, score, p95 in front.points:
+        delta = "—" if score is None or base is None else f"{score - base:+.3f}"
+        lines.append(f"| {budget or 'unbounded'} | {_fmt(score)} | {_fmt(p95, '.2f')} | {delta} |")
+    lines += ["", front.verdict, ""]
+    return "\n".join(lines)
