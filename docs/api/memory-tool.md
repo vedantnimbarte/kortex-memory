@@ -96,6 +96,18 @@ Nothing is namespaced away from your other memories: a fact an agent wrote
 through MCP and a file Claude wrote through its native tool land in the same
 scope and are retrieved together. That is the point — one corpus, not two.
 
+One consequence worth knowing before you rely on it. `tool_output` is **low
+trust**, so a recall made at `confidential` or `secret` sensitivity leaves these
+files out. That is the safer of the two available defaults and it is chosen
+deliberately: the content is model-authored, may contain whatever the session
+happened to read, and is re-read by the model every session by design — exactly
+the injection-persistence shape the trust policy exists to guard against. Low
+trust is also what makes injection quarantine run on these writes at all.
+
+The cost is real, so it is stated rather than left to be discovered: an agent
+working at `confidential` will not see what Claude wrote through its native
+tool. Ordinary `internal` recall is unaffected.
+
 ## Three deliberate differences from a filesystem
 
 **A gated write says it was held.** If the project reviews writes, or the

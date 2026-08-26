@@ -13,7 +13,7 @@ If those two stop working, this is just a slower `os.path`.
 from __future__ import annotations
 
 import pytest
-from kortex_core.db.types import MemoryKind, ReviewMode, ScopeType
+from kortex_core.db.types import MemoryKind, ReviewMode, ScopeType, Sensitivity
 from kortex_core.memory_tool import PATH_KEY, MemoryToolBackend
 from kortex_core.repositories.memory_repo import MemoryRepository, ScopeFilter
 from kortex_core.repositories.project_repo import ProjectRepository
@@ -213,8 +213,35 @@ async def test_memory_tool_files_are_ordinary_searchable_memories(session) -> No
         query="DynamoDB",
         query_vector=None,
         scopes=[ScopeFilter(scope_type=ScopeType.PROJECT, scope_id=scope_id)],
+        max_sensitivity=Sensitivity.INTERNAL,
     )
     assert [h.title for h in hits] == ["/memories/ledger.md"]
+
+
+async def test_a_high_sensitivity_recall_does_not_draw_on_them(session) -> None:  # type: ignore[no-untyped-def]
+    """Memory-tool files are written as ``tool_output``, which is low trust, so
+    a recall at confidential or secret leaves them out.
+
+    Deliberate, and the safer default of the two available. The content is
+    model-authored and may contain whatever the session read; it is also re-read
+    by the model every session by design, which is exactly the
+    injection-persistence shape the trust policy exists for. Low trust is also
+    what makes injection quarantine run on these writes at all.
+
+    The cost is stated here rather than discovered: an agent working at
+    confidential does not see what Claude wrote through its native tool.
+    """
+    backend, principal, scope_id = await _backend(session, "mt17@acme.io", "Memory Tool Seventeen")
+    await backend.execute({"command": "create", "path": "/memories/ledger.md", "file_text": NOTES})
+    await session.flush()
+
+    hits = await MemoryRepository(session, principal=principal).hybrid_search(
+        query="DynamoDB",
+        query_vector=None,
+        scopes=[ScopeFilter(scope_type=ScopeType.PROJECT, scope_id=scope_id)],
+        max_sensitivity=Sensitivity.SECRET,
+    )
+    assert hits == []
 
 
 async def test_a_gated_write_says_it_was_held(session) -> None:  # type: ignore[no-untyped-def]
