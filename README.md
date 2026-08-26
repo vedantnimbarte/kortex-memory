@@ -41,6 +41,7 @@ kortex-memory/
 │   ├── kortex-api/     # FastAPI REST app (+ middleware: context, etag, idempotency, ratelimit)
 │   ├── kortex-mcp/     # MCP server (stdio + SSE) sharing one tool registry
 │   ├── kortex-sdk/     # `pip install kortex` — Python client (httpx only, no core dep)
+│   ├── kortex-ts/      # `npm i @kortex/client` — TypeScript client (zero runtime deps)
 │   ├── kortex-cli/     # `kortex` Typer CLI (admin + user)
 │   ├── kortex-web/     # Vite + React + TypeScript web console (SPA)
 │   └── kortex-worker/  # Celery worker (embed, decay, consolidate, attachments, summaries) + beat

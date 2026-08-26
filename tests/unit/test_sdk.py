@@ -192,8 +192,11 @@ def test_retries_run_out_and_the_error_carries_the_servers_advice() -> None:
             json={"title": "Too Many Requests", "detail": "slow down"},
         )
     )
+    # max_retries=0 so the client raises on the first response. With a retry
+    # allowed it would honour Retry-After and sleep a real 30 seconds, which is
+    # correct behaviour and a terrible unit test -- retry_delay has its own.
     with pytest.raises(RateLimitError) as caught:
-        client(max_retries=1).remember("anything")
+        client(max_retries=0).remember("anything")
 
     assert caught.value.retry_after == 30
     assert str(caught.value) == "slow down"
