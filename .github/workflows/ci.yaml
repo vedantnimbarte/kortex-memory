@@ -67,6 +67,25 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  typescript:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/kortex-ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/kortex-ts/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      # Runs against dist/, so this also checks that what npm publishes is what
+      # was tested.
+      - run: npm test
+
   test-integration:
     runs-on: ubuntu-latest
     services:

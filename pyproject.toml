@@ -9,7 +9,9 @@ authors = [{ name = "Kortex Memory" }]
 
 [tool.uv.workspace]
 members = ["packages/*"]
-exclude = ["packages/kortex-web"]
+# Not Python. uv treats every packages/* directory as a workspace member and
+# fails on one without a pyproject.toml, so the JS packages are named here.
+exclude = ["packages/kortex-web", "packages/kortex-ts"]
 
 [tool.uv.sources]
 kortex-core = { workspace = true }
@@ -17,6 +19,7 @@ kortex-api = { workspace = true }
 kortex-mcp = { workspace = true }
 kortex-cli = { workspace = true }
 kortex-worker = { workspace = true }
+kortex = { workspace = true }
 
 [dependency-groups]
 dev = [

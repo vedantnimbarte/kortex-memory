@@ -1,0 +1,45 @@
+{
+  "name": "@kortex/client",
+  "version": "0.1.0",
+  "description": "TypeScript client for Kortex Memory \u2014 a memory layer for LLMs and AI agents",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vedantnimbarte/kortex-memory.git",
+    "directory": "packages/kortex-ts"
+  },
+  "keywords": [
+    "memory",
+    "llm",
+    "agents",
+    "rag",
+    "kortex"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/client.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.0"
+  }
+}

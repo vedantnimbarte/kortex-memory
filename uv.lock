@@ -4,6 +4,7 @@ requires-python = "==3.12.*"
 
 [manifest]
 members = [
+    "kortex",
     "kortex-api",
     "kortex-cli",
     "kortex-core",
@@ -1044,6 +1045,17 @@ wheels = [
 redis = [
     { name = "redis" },
 ]
+
+[[package]]
+name = "kortex"
+version = "0.1.0"
+source = { editable = "packages/kortex-sdk" }
+dependencies = [
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=0.27.0" }]
 
 [[package]]
 name = "kortex-api"

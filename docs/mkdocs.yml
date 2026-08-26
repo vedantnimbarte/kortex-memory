@@ -52,6 +52,8 @@ nav:
       - Testing: developers/testing.md
   - API:
       - REST: api/rest.md
+      - Python SDK: api/python.md
+      - TypeScript SDK: api/typescript.md
       - MCP: api/mcp.md
   - Operators:
       - Deploy: operators/deploy.md
