@@ -41,6 +41,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
+  - Portability: portability.md
   - Architecture:
       - Overview: architecture/overview.md
       - ADRs:

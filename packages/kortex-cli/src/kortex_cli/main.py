@@ -22,6 +22,7 @@ from kortex_cli.cmds import (
     user,
     workspace,
 )
+from kortex_cli.cmds.import_ import import_command
 from kortex_cli.cmds.init import init as init_command
 
 app = typer.Typer(
@@ -46,6 +47,10 @@ app.add_typer(admin.app, name="admin")
 app.add_typer(hook.app, name="hook")
 app.add_typer(doctor.app, name="doctor")
 app.command("init")(init_command)
+# Root commands, not sub-apps: a Typer group callback cannot take options
+# after a positional, so `kortex import file --from mem0` only parses when
+# `import` is a plain command.
+app.command("import")(import_command)
 
 
 if __name__ == "__main__":  # pragma: no cover
