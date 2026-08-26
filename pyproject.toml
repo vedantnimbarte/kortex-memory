@@ -17,6 +17,7 @@ kortex-api = { workspace = true }
 kortex-mcp = { workspace = true }
 kortex-cli = { workspace = true }
 kortex-worker = { workspace = true }
+kortex = { workspace = true }
 
 [dependency-groups]
 dev = [
