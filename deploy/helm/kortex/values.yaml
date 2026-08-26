@@ -2,19 +2,19 @@
 # Override per-environment under deploy/k8s/overlays/{dev,staging,prod}.
 
 image:
-  registry: ghcr.io/anthropic
+  registry: ghcr.io/vedantnimbarte
   api:
     repository: kortex-api
-    tag: "0.1.0"
+    tag: "main"
   mcp:
     repository: kortex-mcp
-    tag: "0.1.0"
+    tag: "main"
   worker:
     repository: kortex-worker
-    tag: "0.1.0"
+    tag: "main"
   web:
     repository: kortex-web
-    tag: "0.1.0"
+    tag: "main"
   pullPolicy: IfNotPresent
 
 env: production

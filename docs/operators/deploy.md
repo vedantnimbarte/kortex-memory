@@ -42,7 +42,7 @@ Run migrations once after install:
 
 ```sh
 kubectl -n kortex run --rm -it migrate \
-  --image=ghcr.io/anthropic/kortex-api:0.1.0 \
+  --image=ghcr.io/vedantnimbarte/kortex-api:main \
   --command -- alembic upgrade head
 ```
 
