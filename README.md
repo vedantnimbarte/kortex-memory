@@ -30,6 +30,7 @@ sessions and tools.
 | [DEPLOYMENT.md](DEPLOYMENT.md) | You're shipping Kortex to a real Kubernetes cluster (full runbook). |
 | [RELEASE.md](RELEASE.md) | You're cutting a new tagged release. |
 | [CHANGELOG.md](CHANGELOG.md) | You want to know what changed in this version. |
+| [docs/portability.md](docs/portability.md) | You want to know how hard Kortex is to leave — or how to bring a corpus over from mem0, Zep or Letta. |
 | [docs/](docs/) | The full mkdocs site (architecture, ADRs, ops runbooks, API ref). |
 
 ## Project layout
