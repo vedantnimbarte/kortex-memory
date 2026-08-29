@@ -101,19 +101,29 @@ def _check_ingest(client: ApiClient, report: Report, *, max_pending_age: float) 
         report.add("embedding backlog", OK, f"{pending} pending")
 
 
-def _check_round_trip(client: ApiClient, report: Report, *, timeout: float) -> None:
-    """Write → embed → search → delete, against a real scope."""
-    workspaces = client.get("/v1/workspaces") or []
-    if not workspaces:
-        report.add("round trip", WARN, "no workspace to write into")
-        return
+def _check_round_trip(
+    client: ApiClient, report: Report, *, timeout: float, who: dict[str, Any]
+) -> None:
+    """Write → embed → search → delete, against a real scope.
+
+    An api key is bound to one scope and holds a role there and nowhere else,
+    so the canary has to be written into *that* scope — picking the first
+    workspace instead denies a project-scoped key on its own install.
+    """
+    scope_type, scope_id = who.get("scope_type"), who.get("scope_id")
+    if not scope_type:
+        workspaces = client.get("/v1/workspaces") or []
+        if not workspaces:
+            report.add("round trip", WARN, "no workspace to write into")
+            return
+        scope_type, scope_id = "workspace", workspaces[0]["id"]
 
     marker = f"kortex-doctor-{uuid.uuid4().hex[:12]}"
     created = client.post(
         "/v1/memories",
         json={
-            "scope_type": "workspace",
-            "scope_id": workspaces[0]["id"],
+            "scope_type": scope_type,
+            "scope_id": scope_id,
             "title": "kortex doctor canary",
             "body": f"Canary {marker}. Safe to delete.",
             "kind": "event",
@@ -172,13 +182,14 @@ def doctor(
         return
     report = Report()
     with ApiClient() as client:
-        if _check_api(client, report) is None:
+        who = _check_api(client, report)
+        if who is None:
             report.render()
             raise typer.Exit(1)
         _check_ingest(client, report, max_pending_age=max_pending_age)
         if not skip_round_trip:
             try:
-                _check_round_trip(client, report, timeout=timeout)
+                _check_round_trip(client, report, timeout=timeout, who=who)
             except CliApiError as e:
                 report.add("round trip", FAIL, str(e))
 

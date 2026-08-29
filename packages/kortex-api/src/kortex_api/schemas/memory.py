@@ -54,7 +54,7 @@ class MemoryOut(APIModel):
     updated_at: dt.datetime
     last_accessed_at: dt.datetime | None
     expires_at: dt.datetime | None
-    metadata_: dict = Field(alias="metadata")
+    metadata_: dict = Field(validation_alias="metadata_", serialization_alias="metadata")
     trust: str = "medium"
     """Provenance confidence. Low-trust memories are withheld from recalls made
     at confidential/secret sensitivity."""

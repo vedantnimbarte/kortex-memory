@@ -44,7 +44,7 @@ class AttachmentOut(APIModel):
     s3_key: str
     created_at: dt.datetime
     updated_at: dt.datetime
-    metadata_: dict = Field(alias="metadata")
+    metadata_: dict = Field(validation_alias="metadata_", serialization_alias="metadata")
 
 
 class AttachmentPresignOut(APIModel):

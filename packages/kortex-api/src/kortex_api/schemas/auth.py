@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from kortex_core.db.types import ScopeType
 from pydantic import EmailStr, Field
 
 from kortex_api.schemas.common import APIModel
@@ -55,3 +56,7 @@ class WhoamiOut(APIModel):
     is_superuser: bool
     org_id: int
     email_verified: bool = True
+    scope_type: ScopeType | None = None
+    scope_id: int | None = None
+    """The scope an api key is bound to. Null for user sessions, which are
+    not confined to one scope."""
