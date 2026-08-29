@@ -148,4 +148,6 @@ async def whoami(principal: PrincipalDep, session: SessionDep) -> WhoamiOut:
         is_superuser=principal.is_superuser,
         org_id=principal.org_id,
         email_verified=email_verified,
+        scope_type=principal.scope.type if principal.scope else None,
+        scope_id=principal.scope.id if principal.scope else None,
     )
