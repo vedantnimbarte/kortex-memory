@@ -26,7 +26,7 @@ import typer
 from rich.console import Console
 
 from kortex_cli.client import ApiClient, CliApiError
-from kortex_cli.config import get_profile
+from kortex_cli.config import CliProfile, get_profile
 from kortex_cli.harnesses import (
     HARNESSES,
     HOOK_COMMAND,
@@ -126,8 +126,14 @@ def _resolve_database_url(explicit: str | None, root: Path) -> str:
 # --- steps -------------------------------------------------------------------
 
 
-def _resolve_project(client: ApiClient, workspace: str | None, root: Path) -> dict:
-    """Find the Project scope matching this repo, creating it when absent."""
+def _resolve_project(
+    client: ApiClient, workspace: str | None, root: Path, *, create: bool = True
+) -> dict:
+    """Find the Project scope matching this repo, creating it when absent.
+
+    ``create=False`` reports what a real run would do and stops there: a dry
+    run that leaves a project behind is not a dry run.
+    """
     workspaces: list[dict] = client.get("/v1/workspaces") or []
     if not workspaces:
         _die("no workspaces found — create one first: kortex workspace create <slug> --name <name>")
@@ -147,6 +153,9 @@ def _resolve_project(client: ApiClient, workspace: str | None, root: Path) -> di
     for project in projects:
         if project["slug"] == slug:
             return project
+    if not create:
+        _note(f"project `{slug}` does not exist yet — would create it")
+        return {"id": 0, "slug": slug, "public_id": ""}
     created: dict = client.post(
         f"/v1/workspaces/{chosen['public_id']}/projects",
         json={"slug": slug, "name": root.name},
@@ -154,8 +163,17 @@ def _resolve_project(client: ApiClient, workspace: str | None, root: Path) -> di
     return created
 
 
-def _resolve_key(client: ApiClient, project: dict, fallback: str | None) -> str:
-    """Mint a project-scoped key; reuse the profile's key when we're not allowed to."""
+def _resolve_key(
+    client: ApiClient, project: dict, fallback: str | None, *, mint: bool = True
+) -> str:
+    """Mint a project-scoped key; reuse the profile's key when we're not allowed to.
+
+    ``mint=False`` for a dry run — a minted key is a real credential whether or
+    not anything was written to disk.
+    """
+    if not mint:
+        _note("would mint a project-scoped api key")
+        return fallback or "kx_<minted on a real run>"
     try:
         minted = client.post(
             "/v1/api_keys",
@@ -204,8 +222,21 @@ def _write_configs(
         _ok(f"{write_merged(hook_path, hook_text)} {hook_path} (SessionStart hook)")
 
 
-def _verify(client: ApiClient, project: dict) -> None:
-    """Write a canary memory, read it back, then delete it."""
+def _verify(profile: CliProfile, api_key: str, project: dict) -> None:
+    """Write a canary memory, read it back, then delete it.
+
+    As the key we just installed, not as the profile. An api key holds a role
+    in the one scope it is bound to, so the profile's own credential is denied
+    in a project it does not belong to — which says nothing about whether the
+    wiring works, and fails on a healthy install.
+    """
+    with ApiClient(
+        CliProfile(name=profile.name, api_url=profile.api_url, api_key=api_key)
+    ) as client:
+        _canary(client, project)
+
+
+def _canary(client: ApiClient, project: dict) -> None:
     created = client.post(
         "/v1/memories",
         json={
@@ -273,12 +304,12 @@ def init(
         _ok(f"authenticated against {profile.api_url}")
 
         try:
-            project = _resolve_project(client, workspace, root)
+            project = _resolve_project(client, workspace, root, create=not dry_run)
         except CliApiError as e:
             _die(f"could not resolve a project scope: {e}")
         _ok(f"project scope `{project['slug']}` (id {project['id']})")
 
-        api_key = _resolve_key(client, project, profile.api_key)
+        api_key = _resolve_key(client, project, profile.api_key, mint=not dry_run)
 
         url = mcp_url or _default_mcp_url(profile.api_url)
         remote = _sse_alive(url) if transport == "auto" else transport == "sse"
@@ -320,7 +351,7 @@ def init(
             console.print("[dim]dry run — nothing written, canary skipped[/dim]")
             return
         try:
-            _verify(client, project)
+            _verify(profile, api_key, project)
         except CliApiError as e:
             _die(f"verification failed: {e}")
 

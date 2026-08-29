@@ -57,3 +57,4 @@ site/
 
 # Local Claude/agent state
 .claude/
+.mcp.json*
