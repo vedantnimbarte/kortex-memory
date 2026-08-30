@@ -52,4 +52,4 @@ picks a transport, writes the harness config, and verifies the round trip.
 Re-running is a no-op; `--dry-run` reports without writing.
 
 Restart the agent and it has `remember`, `recall`, `search_memory`,
-`attach_file`, `get_context_bundle`, and eleven more tools.
+`attach_file`, `get_context_bundle`, and the rest of the 16.

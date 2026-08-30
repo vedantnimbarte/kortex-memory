@@ -1,4 +1,4 @@
-"""memory governance: trust, pii_flags, quarantine (WU-2.4)
+"""memory governance: trust, pii_flags, quarantine
 
 Sensitivity governs who may read a memory. None of the schema said whether a
 memory should have been allowed to influence anything — so a sentence scraped

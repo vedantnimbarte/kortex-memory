@@ -1,4 +1,4 @@
-"""review queue: unify quarantine into one held state (WU-2.3)
+"""review queue: unify quarantine into one held state
 
 kkx0008 gave suspicious memories their own hold (``quarantined_at``). Adding a
 second hold for low-confidence writes would mean two exclusion filters to keep

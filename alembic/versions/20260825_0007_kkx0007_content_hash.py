@@ -1,4 +1,4 @@
-"""memories.content_hash (WU-2.2 — write-time deduplication)
+"""memories.content_hash (write-time deduplication)
 
 Fingerprint of the normalised title+body, looked up before every insert so a
 verbatim rewrite folds into the existing memory instead of competing with it

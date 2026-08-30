@@ -1,4 +1,4 @@
-"""memories embed failure tracking (WU-1.3 — write-path integrity)
+"""memories embed failure tracking (write-path integrity)
 
 Before this, a memory whose embedding failed kept ``embedding IS NULL``
 forever: invisible to vector search, retried on every 30s tick, with no

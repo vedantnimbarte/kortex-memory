@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         help=(
             "Repeatable. Runs agentic mode once per latency ceiling to trace the "
-            "accuracy-vs-latency frontier WU-2.6 turns on. Omit for one unbounded run."
+            "accuracy-vs-latency frontier. Omit for one unbounded run."
         ),
     )
     parser.add_argument(
@@ -276,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\n" + table)
     print(f"wrote {args.out}")
     # A non-zero exit would be wrong: the run succeeded, and the finding is the
-    # point. WU-2.6 asks for the unflattering number to be published, not
+    # point: the unflattering number is meant to be published, not
     # treated as a failure.
     if front is not None and front.demote:
         print("NOTE: the frontier says agentic should be opt-in — see the verdict above.")

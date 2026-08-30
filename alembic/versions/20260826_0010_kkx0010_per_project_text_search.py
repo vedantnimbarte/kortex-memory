@@ -1,4 +1,4 @@
-"""per-project text search configuration (WU-2.1 — multilingual)
+"""per-project text search configuration (multilingual)
 
 Keyword search was hardcoded to English in three places: the ``tsv`` generated
 columns on ``memories`` and ``attachment_chunks``, and every

@@ -245,7 +245,7 @@ dressed as a finding."""
 class Frontier:
     """Whether agentic recall is worth what it costs, at each budget measured.
 
-    WU-2.6 turns on a specific decision — *if agentic still loses to plain
+    One decision turns on this — *if agentic still loses to plain
     hybrid, say so publicly and demote it to an opt-in mode* — and that
     decision needs a curve, not two dots. One agentic run at one latency says
     nothing about whether the mode is bad or merely under-budgeted.
@@ -341,7 +341,7 @@ def frontier(reports: list[RunReport]) -> Frontier | None:
             verdict=(
                 f"**Agentic recall did not beat plain hybrid at any budget measured.** "
                 f"Hybrid {metric}={baseline:.3f}; agentic peaked at {best_score:.3f} "
-                f"({best_budget or 'unbounded'} ms). Per WU-2.6 the finding is published "
+                f"({best_budget or 'unbounded'} ms). The finding is published "
                 f"as it stands and agentic is demoted to opt-in: "
                 f"`KORTEX_AGENTIC_RETRIEVAL=false`.{caveat}"
             ),
