@@ -6,7 +6,7 @@
 
 Runs every requested mode over the same corpus so the modes are compared on
 identical inputs, writes a JSON result file for machine comparison, and prints
-the markdown table that goes into docs/benchmarks.md.
+a markdown table for reporting.
 """
 
 from __future__ import annotations

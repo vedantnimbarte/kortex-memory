@@ -26,4 +26,4 @@ body:
     attributes:
       label: Before filing
       options:
-        - label: I checked [docs/implementation-plan.md](../../docs/implementation-plan.md) — this isn't already planned
+        - label: I searched existing issues — this isn't already filed or planned

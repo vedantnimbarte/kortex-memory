@@ -1,9 +1,56 @@
 # kortex-memory
 
-Production-grade, multi-tenant memory layer for LLMs and AI coding agents
-(Claude Code, Codex, OpenCode). Plug it in via MCP and your agents get a
-shared, durable, scoped, access-controlled memory that survives across
-sessions and tools.
+**The memory layer you can actually run yourself — one Postgres,
+tenant-isolated by construction, shared across every coding agent your team
+uses.**
+
+Claude Code, Cursor, Codex and OpenCode each keep their own memory, on your
+machine, for you. Kortex gives them one memory: scoped to your org, your
+workspace, your project — access-controlled, auditable, and running on your
+infrastructure.
+
+```bash
+make local-build && make local-run
+```
+
+```bash
+kortex init claude-code
+```
+
+That is the whole install: one container, one command per harness. No compose
+file, no `.env`. The checkout-free version — `docker run … ghcr.io/vedantnimbarte/kortex-local:main`
+— works the moment that package is made public, which it is
+not yet.
+
+## Three things Kortex does that the funded competition doesn't
+
+**1. It can't leak between tenants — and CI proves it every commit.**
+`org_id` is on every scoped row, and every repository query goes through one
+`tenant_query()` chokepoint enforced by a custom AST lint
+([`tools/ruff_plugins`](tools/ruff_plugins)) that fails the build on a raw
+`select()`. Run it yourself: `uv run python -m tools.ruff_plugins.tenant_check .`
+Meanwhile the category leader ships scope-leak bugs
+([mem0#6796](https://github.com/mem0ai/mem0/issues/6796), plus filter-after-`top_k`
+in three of its vector stores).
+
+**2. Self-host is the product, not the "contact sales" tier.**
+Apache-2.0, all of it, permanently — see
+[ADR-0004](docs/architecture/adr/0004-license-split.md). One container to try
+it, three-container compose for a real team, Helm + kustomize overlays + 6
+Grafana dashboards for a cluster. Postgres and Redis, no graph database. Every
+competitor puts on-prem or BYOC behind a sales call: Mem0's on-prem is
+Enterprise, Zep's BYOC is Enterprise, Graphiti needs you to run Neo4j, and
+Supermemory's self-host has nine open issues.
+
+**3. More memory isn't better memory — so Kortex forgets on purpose.**
+Decay with a configurable half-life, HDBSCAN consolidation, dedup on write, and
+write-gating with a review queue, so a year of sessions doesn't become a year of
+context pollution. Contradictions are **surfaced at recall**, not auto-resolved:
+both memories come back, the stale one flagged and sorted last, and the agent —
+which has the conversation context the database doesn't — decides.
+
+Where Kortex loses today, stated plainly: no published retrieval benchmark
+yet, no SSO/SOC 2, and ~2 stars against Mem0's ~48K.
 
 ## Highlights
 
@@ -30,7 +77,6 @@ sessions and tools.
 | [DEPLOYMENT.md](DEPLOYMENT.md) | You're shipping Kortex to a real Kubernetes cluster (full runbook). |
 | [RELEASE.md](RELEASE.md) | You're cutting a new tagged release. |
 | [CHANGELOG.md](CHANGELOG.md) | You want to know what changed in this version. |
-| [docs/portability.md](docs/portability.md) | You want to know how hard Kortex is to leave — or how to bring a corpus over from mem0, Zep or Letta. |
 | [docs/](docs/) | The full mkdocs site (architecture, ADRs, ops runbooks, API ref). |
 
 ## Project layout
@@ -67,8 +113,8 @@ kortex-memory/
 make local-build && make local-run
 ```
 
-Or, once the container package is published publicly — it is **not** yet, see
-[docs/distribution.md](docs/distribution.md) — without a checkout at all:
+Or, once the container package is published publicly — it is **not** yet —
+without a checkout at all:
 
 ```bash
 docker run -d --name kortex-local -p 8000:8000 -p 8765:8765 -v kortex-data:/data ghcr.io/vedantnimbarte/kortex-local:main
@@ -356,4 +402,9 @@ the full sequence including smoke tests, backups, and the load-test gate.
 
 ## License
 
-Apache-2.0.
+Apache-2.0 — and everything in this repository stays Apache-2.0 permanently.
+Shipped code is never retro-licensed; only *future* enterprise features
+(SSO/SCIM, SIEM audit export, BYOK, residency controls) will land in `ee/`
+under a source-available license, and none of them may degrade a core code
+path. The reasoning, and the guarantees that come with it, are in
+[ADR-0004](docs/architecture/adr/0004-license-split.md).
