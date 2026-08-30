@@ -1,6 +1,6 @@
 """The accuracy-vs-latency frontier, and the verdict it produces.
 
-WU-2.6 turns on one decision — *if agentic recall still loses to plain hybrid,
+One decision turns on this — *if agentic recall still loses to plain hybrid,
 say so publicly and demote it to opt-in* — and the temptation at the moment of
 reading a disappointing table is to find a reason it does not count. So the
 verdict is computed, and the computation is tested, before anyone has seen a
@@ -40,7 +40,7 @@ def report(
     )
 
 
-# --- the finding WU-2.6 is written to accept ---------------------------------
+# --- the finding this is written to accept -----------------------------------
 
 
 def test_agentic_losing_everywhere_says_demote() -> None:

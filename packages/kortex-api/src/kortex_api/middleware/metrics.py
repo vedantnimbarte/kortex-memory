@@ -5,7 +5,7 @@ API HPA (``kortex_api_requests_total`` custom-metric autoscaling) depend on.
 Labels use the matched *route template* (e.g. ``/v1/memories/{public_id}``) not
 the raw path, so per-object UUIDs don't explode label cardinality.
 
-Also exports write-path health (WU-1.3). Those three gauges are refreshed from
+Also exports write-path health. Those three gauges are refreshed from
 the database on scrape rather than pushed by the worker, because the worker has
 no HTTP surface to scrape. The result is cached for
 ``_EMBED_GAUGE_TTL_SECONDS`` so an unauthenticated ``/metrics`` cannot be turned

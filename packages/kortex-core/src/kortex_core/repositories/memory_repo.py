@@ -877,7 +877,7 @@ class MemoryRepository(BaseRepository[Memory]):
         for i, sv in enumerate(sens_allowed):
             params[f"sens_{i}"] = sv
 
-        # Governance filters (WU-2.4). Quarantined memories are withheld from
+        # Governance filters. Quarantined memories are withheld from
         # every retrieval path — the whole point is that stored injections stop
         # being re-injected — and a recall made at confidential/secret
         # sensitivity does not draw on content the system did not author.

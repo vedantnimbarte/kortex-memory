@@ -5,7 +5,7 @@
 ## Why
 
 <!-- The evidence: an issue, a failure you hit, a user report. If this
-     implements a planned work unit, link it (Closes #N). -->
+     closes a tracked issue, link it (Closes #N). -->
 
 ## Checklist
 

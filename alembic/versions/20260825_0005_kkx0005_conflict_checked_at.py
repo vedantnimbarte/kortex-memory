@@ -1,4 +1,4 @@
-"""memories.conflict_checked_at (WU-1.2 — contradiction surfacing)
+"""memories.conflict_checked_at (contradiction surfacing)
 
 Adds the queue marker the conflict-detection worker drains, plus a partial
 index so its every-minute scan never touches the table when the queue is empty.

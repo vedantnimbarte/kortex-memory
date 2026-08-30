@@ -11,6 +11,9 @@ Session, with `org_id` on every scoped row and a tenancy chokepoint enforced by
 a CI lint — so one memory can be shared across Claude Code, Cursor, Codex and
 OpenCode without leaking across tenants.
 
+Where Kortex loses today, stated plainly: no published retrieval benchmark
+yet, no SSO/SOC 2, and ~2 stars against Mem0's ~48K.
+
 ## What's here
 
 | Surface | Use it for |
@@ -34,9 +37,11 @@ See [Architecture → Overview](architecture/overview.md) for the full design.
 
 ```sh
 pip install kortex-cli
-kortex auth login
-# wire Claude Code to:
-kortex-mcp stdio
+kortex init claude-code    # or: cursor, codex, opencode
 ```
+
+`kortex init` resolves the Project scope for the current repo, mints a
+project-scoped key, picks a transport, writes the harness config, and
+verifies the round trip. Re-running is a no-op.
 
 Full setup in [Quickstart](quickstart.md).

@@ -1,4 +1,4 @@
-"""tamper-evident audit log (WU-3.1 — audit export)
+"""tamper-evident audit log (audit export)
 
 Two independent mechanisms, because they fail in different ways.
 
