@@ -61,8 +61,9 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   suite against a live deployment over HTTP, reporting recall@k, MRR, judged accuracy (with
   `--judge`) and p50/p95/p99 latency for `hybrid` and `agentic` modes over the same corpus.
   Retrieval and answer accuracy are reported separately and never merged; unmeasured values render
-  as `—` rather than zero. `docs/benchmarks.md` is the place results go — currently empty, and
-  explicitly so.
+  as `—` rather than zero. No results are published: the harness is what shipped, and running it
+  needs a corpus, a live deployment and a judge model. Anyone quoting Kortex's retrieval quality
+  today is guessing, including us.
 - **Retrieval regression gate** (`tests/integration/test_retrieval_quality.py`) — scores a small
   synthetic corpus in ordinary CI and fails if recall or MRR falls below a floor, so a broken
   ranker fails on the PR that caused it. Floors are loose by design: it catches breakage, not
@@ -128,6 +129,25 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   `embed_error`, so a client can tell whether a memory is actually searchable yet.
 - `embed_pending` returns a result dict instead of a bare count.
 
+### Removed
+- **Planning, research and launch documents** — `plan.md`, `docs/implementation-plan.md`,
+  `docs/market-research.md`, `docs/dogfood-log.md`, `docs/distribution.md`, `docs/launch-copy.md`,
+  `docs/benchmarks.md`, `docs/portability.md` and `docs/comparison.md`, ~1,880 lines. They
+  described what Kortex was going to be — a milestone plan, a work-unit roadmap, competitor and
+  pricing strategy, a go-to-market runbook, announcement copy drafted before the announcement, and
+  a results page holding no results. The repository now documents the project as it is; planning
+  belongs in issues, where it can be closed.
+- Three published pages went with them: **Benchmarks**, **Portability** and **Comparison**. The
+  portability guarantee itself is unchanged and enforced by code — `kortex export` still writes
+  plain JSONL plus the original attachment blobs, covered by `tests/unit/test_export_service.py`
+  and `tests/unit/test_importers.py`.
+  Where Kortex loses against Mem0, Zep and Letta is now stated in the README instead of on its own
+  page.
+- Every reference to the removed files was repaired in the same change: the mkdocs nav and its
+  now-redundant `exclude_docs` block, the README's documentation table and install notes,
+  `CONTRIBUTING.md`'s "Where to start", the feature-request issue form, and the benchmark runner's
+  docstring. All remaining mkdocs nav targets resolve.
+
 ### Fixed
 - **Agentic recall crashed when the embedder was unavailable at call time.** The agent loop let
   `EmbeddingError` propagate out of a semantic-search step, so a missing optional dependency, a
@@ -141,10 +161,10 @@ Semantic Versioning; pre-1.0 releases may include incidental schema changes.
   and `update_memory` both returned an error to the agent instead of the updated row. The
   declarative base now sets `eager_defaults`, so Postgres returns the generated value with the
   UPDATE itself.
-- `docs/mkdocs.yml` pointed `repo_url` at `github.com/anthropic/kortex-memory`, and did not
-  exclude the internal strategy documents — mkdocs publishes every page it finds in `docs_dir`
-  regardless of the nav, so the market research and implementation plan would have shipped to a
-  public site.
+- `docs/mkdocs.yml` pointed `repo_url` at `github.com/anthropic/kortex-memory`. It also published
+  the internal strategy documents — mkdocs renders every page it finds in `docs_dir` regardless of
+  the nav, so the market research and implementation plan would have reached a public site. They
+  were excluded first and have since been removed from the repository entirely (see **Removed**).
 - Dockerfiles are now built on pull requests. Nothing validated them until after merge to main.
 - `tests/conftest.py` auto-marked tests by directory using a POSIX path check, so on Windows
   `pytest -m unit` silently selected only the few files carrying an explicit `pytestmark`.
