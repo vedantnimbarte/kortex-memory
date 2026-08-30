@@ -4,16 +4,6 @@ site_url: https://kortex-memory.dev
 repo_url: https://github.com/vedantnimbarte/kortex-memory
 repo_name: kortex-memory
 
-# Internal strategy documents. They live beside the docs for convenience but
-# must never reach the published site — they contain competitor critique and
-# pricing positioning. Excluded here rather than relying on the nav, because
-# mkdocs publishes every page it finds in docs_dir, nav membership or not.
-exclude_docs: |
-  market-research.md
-  implementation-plan.md
-  distribution.md
-  dogfood-log.md
-
 theme:
   name: material
   features:
@@ -43,7 +33,6 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Quickstart: quickstart.md
-  - Portability: portability.md
   - Integrations:
       - Claude Code: integrations/claude-code.md
       - Cursor: integrations/cursor.md
@@ -55,6 +44,7 @@ nav:
           - 0001 Choose pgvector + HNSW: architecture/adr/0001-pgvector-hnsw.md
           - 0002 Agentic retrieval over LLM-only: architecture/adr/0002-agentic-retrieval.md
           - 0003 Pluggable skills: architecture/adr/0003-pluggable-skills.md
+          - 0004 License split: architecture/adr/0004-license-split.md
   - Developers:
       - Setup: developers/setup.md
       - Testing: developers/testing.md

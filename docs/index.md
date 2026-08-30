@@ -1,9 +1,15 @@
 # Kortex Memory
 
-A production-grade, multi-tenant memory layer for LLM apps and AI coding agents
-(Claude Code, Codex, OpenCode). Memories are stored in Postgres + S3, retrieved
-via hybrid vector + BM25 + recency search, optionally planned by an LLM, and
-served over REST, MCP (stdio + SSE), or the `kortex` CLI.
+**The memory layer you can actually run yourself — one Postgres,
+tenant-isolated by construction, shared across every coding agent your team
+uses.**
+
+Memories are stored in Postgres (+ optional S3), retrieved via hybrid vector +
+BM25 + recency search, optionally planned by an LLM, and served over REST, MCP
+(stdio + SSE), or the `kortex` CLI. Scoping is Org → Workspace → Project →
+Session, with `org_id` on every scoped row and a tenancy chokepoint enforced by
+a CI lint — so one memory can be shared across Claude Code, Cursor, Codex and
+OpenCode without leaking across tenants.
 
 ## What's here
 

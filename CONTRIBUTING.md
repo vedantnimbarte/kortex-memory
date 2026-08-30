@@ -62,7 +62,6 @@ that fails if the logic breaks. Unit tests for pure logic, integration tests
 
 ## Where to start
 
-Issues are grouped into milestones matching
-[docs/implementation-plan.md](docs/implementation-plan.md). Anything in
-**Phase 0** or **Phase 1** is fair game. Issues marked `[HUMAN]` need a
-decision from the maintainer first — ask before building.
+Open issues are grouped into milestones. Anything not marked `[HUMAN]` is
+fair game; `[HUMAN]` ones need a decision from the maintainer first — ask
+before building.
