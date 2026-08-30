@@ -19,8 +19,8 @@ kortex init claude-code
 
 That is the whole install: one container, one command per harness. No compose
 file, no `.env`. The checkout-free version — `docker run … ghcr.io/vedantnimbarte/kortex-local:main`
-— works the moment that package is made public, which it is
-not yet.
+— works the moment that package is made public, which it is not yet; until
+then, build it locally with the two commands above.
 
 ## Three things Kortex does that the funded competition doesn't
 
